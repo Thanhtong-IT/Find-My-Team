@@ -1,0 +1,254 @@
+---
+description: Rules for Find My Team Backend (Spring Boot + PostgreSQL + Redis + WebSocket)
+globs:
+  - "be/**/*.java"
+  - "be/**/*.yml"
+  - "be/**/*.yaml"
+  - "be/**/*.sql"
+  - "be/**/*.properties"
+alwaysApply: false
+---
+
+# Find My Team — Backend Coding Rules
+
+## Kiến trúc tổng quan
+
+Dự án theo kiến trúc **Event-driven Realtime** (kiểu Discord):
+- **API Service**: Spring Boot REST API — xử lý business logic + ghi DB + publish event
+- **WebSocket Gateway**: Service giữ kết nối WS, subscribe Redis, push event tới client
+- **Redis**: Pub/Sub + Presence + Cache + Rate Limit
+- **Worker**: Xử lý async (notification push, email, search indexing)
+
+Đọc tài liệu kiến trúc: `realtime-discord-architecture-find-my-team.md` (root project).
+Đọc database schema: `be/database/V1__init_schema.sql`.
+
+## Quy tắc bắt buộc
+
+### 1. Transaction phải ngắn — KHÔNG emit WebSocket trong transaction
+
+```java
+// ✅ ĐÚNG
+@Transactional
+public Message sendMessage(SendMessageRequest req) {
+    Message msg = messageRepository.save(...);
+    conversationRepository.updateLastMessageAt(msg.getChannelId(), msg.getCreatedAt());
+    return msg;
+}
+// Sau khi @Transactional commit xong → publish event
+// eventPublisher.publish("MESSAGE_CREATED", payload);
+
+// ❌ SAI — KHÔNG BAO GIỜ LÀM THẾ NÀY
+@Transactional
+public Message sendMessage(SendMessageRequest req) {
+    Message msg = messageRepository.save(...);
+    webSocketService.broadcast(msg); // SAI: WS trong transaction
+    notificationService.push(msg);   // SAI: Push trong transaction
+    return msg;
+}
+```
+
+### 2. Luồng xử lý chuẩn cho mọi write operation
+
+```
+Controller nhận request
+  → Service validate + @Transactional { write DB } + commit
+  → Service publish event vào Redis (SAU commit)
+  → Controller trả response nhanh
+```
+
+### 3. Cấu trúc module
+
+```
+be/src/main/java/com/findmyteam/
+├── config/          # Security, Redis, WebSocket, CORS, Swagger
+├── security/        # JWT provider, filter, UserPrincipal
+├── common/          # ApiResponse, PageResponse, exceptions, EventPublisher
+└── modules/
+    ├── auth/        # controller, service, dto
+    ├── user/        # controller, service, repository, entity, dto
+    ├── game/        # controller, service, repository, entity
+    ├── team/        # controller, service, repository, entity, dto
+    ├── community/   # controller, service, repository, entity, dto
+    ├── chat/        # controller, service, repository, entity, dto
+    ├── notification/ # controller, service, repository, entity, dto
+    ├── explore/     # controller, service, dto
+    ├── invitation/  # controller, service, entity, dto
+    └── match/       # controller, service, entity, dto
+```
+
+### 4. Naming Convention
+
+| Loại | Convention | Ví dụ |
+|---|---|---|
+| Entity | Singular, PascalCase | `Team`, `JoinRequest` |
+| Table (DB) | snake_case, plural | `teams`, `join_requests` |
+| Repository | `{Entity}Repository` | `TeamRepository` |
+| Service | `{Entity}Service` | `TeamService` |
+| Controller | `{Entity}Controller` | `TeamController` |
+| DTO Request | `{Action}{Entity}Request` | `CreateTeamRequest` |
+| DTO Response | `{Entity}Response` | `TeamResponse` |
+| API path | `/api/{resource}` kebab-case | `/api/teams`, `/api/join-requests` |
+
+### 5. Entity Mapping
+
+Mọi entity phải map đúng tên bảng trong `V1__init_schema.sql`:
+
+```java
+@Entity
+@Table(name = "teams")
+public class Team {
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "game_id", nullable = false)
+    private UUID gameId;
+
+    // ... đúng tên column trong SQL schema
+}
+```
+
+### 6. Response format chuẩn
+
+Mọi API trả về `ApiResponse<T>`:
+
+```java
+// Thành công
+{
+  "success": true,
+  "data": { ... },
+  "message": null
+}
+
+// Lỗi
+{
+  "success": false,
+  "data": null,
+  "message": "Email đã tồn tại"
+}
+
+// Pagination
+{
+  "success": true,
+  "data": {
+    "content": [...],
+    "page": 0,
+    "size": 10,
+    "totalElements": 42,
+    "totalPages": 5
+  }
+}
+```
+
+### 7. Authentication
+
+- Dùng **JWT** (access token + refresh token)
+- Access token: 1 giờ, gửi qua header `Authorization: Bearer <token>`
+- Refresh token: 7 ngày, lưu trong bảng `refresh_tokens`
+- Mọi endpoint trừ `/api/auth/**` đều cần authenticate
+- Lấy user hiện tại: `@AuthenticationPrincipal UserPrincipal principal`
+
+### 8. Validation
+
+- Dùng `jakarta.validation` annotations trên DTO
+- Validate ở Controller level bằng `@Valid`
+- Business validation ở Service level (throw `BusinessException`)
+
+```java
+public record CreateTeamRequest(
+    @NotNull UUID gameId,
+    @Size(max = 50) String requiredRank,
+    @Min(2) @Max(10) int maxSize,
+    @Size(max = 1000) String description
+) {}
+```
+
+### 9. Error Handling
+
+Dùng `@RestControllerAdvice` global handler:
+
+| Exception | HTTP Status |
+|---|---|
+| `ResourceNotFoundException` | 404 |
+| `BusinessException` | 400 |
+| `AccessDeniedException` | 403 |
+| `MethodArgumentNotValidException` | 422 |
+| `Exception` (catch-all) | 500 |
+
+### 10. Event Publishing
+
+Sau mỗi write operation thành công, publish event vào Redis:
+
+```java
+// Trong Service, SAU @Transactional method return
+eventPublisher.publish(EventType.MESSAGE_CREATED, Map.of(
+    "messageId", message.getId(),
+    "channelId", message.getChannelId(),
+    "senderId", message.getSenderId(),
+    "createdAt", message.getCreatedAt()
+));
+```
+
+Event types (ref tài liệu kiến trúc §5):
+- `MESSAGE_CREATED`, `TEAM_MEMBER_JOINED`, `TEAM_MEMBER_LEFT`
+- `TEAM_DISBANDED`, `TEAM_MEMBER_READY`, `JOIN_REQUEST_CREATED`
+- `JOIN_REQUEST_ACCEPTED`, `JOIN_REQUEST_REJECTED`
+- `MATCH_CREATED`, `NOTIFICATION_NEW`, `INVITATION_RECEIVED`
+- `COMMUNITY_MEMBER_JOINED`
+
+### 11. Idempotency
+
+Khi nhận `clientMessageId` từ client:
+1. Check `UNIQUE(sender_id, client_message_id)` trước khi insert
+2. Nếu đã tồn tại → trả lại message cũ (không tạo mới)
+3. Nếu chưa có → insert bình thường
+
+### 12. Dữ liệu KHÔNG lưu DB (dùng Redis)
+
+Theo tài liệu kiến trúc §7:
+- Online/Offline status → `presence:user:{userId}` TTL=60s
+- Typing indicator → chỉ qua WebSocket, không lưu
+- Rate limit counters → `rate:user:{userId}:{action}`
+- Temporary notification state → Redis queue
+
+### 13. Pagination
+
+Dùng Spring Data `Pageable`:
+- Default page size: 10
+- Max page size: 50
+- Sort mặc định: `created_at DESC`
+
+```java
+@GetMapping("/api/teams/open")
+public ApiResponse<Page<TeamResponse>> getOpenTeams(
+    @RequestParam(required = false) UUID gameId,
+    @PageableDefault(size = 10, sort = "createdAt", direction = DESC) Pageable pageable
+) { ... }
+```
+
+### 14. Không được làm
+
+- ❌ Query database trong WebSocket handler
+- ❌ Gọi external service (email, push notification) trong transaction
+- ❌ Broadcast event tới toàn bộ user online (phải scope theo team/channel/conversation)
+- ❌ Dùng `@Transactional` trên Controller
+- ❌ Return entity trực tiếp từ Controller (phải map sang DTO)
+- ❌ Hardcode game data (phải query từ bảng `games`)
+- ❌ Lưu password dạng plaintext (dùng BCrypt)
+- ❌ Dùng `ddl-auto: create/update` (dùng Flyway migration)
+
+### 15. Dependencies cần có
+
+```
+spring-boot-starter-web
+spring-boot-starter-data-jpa
+spring-boot-starter-data-redis
+spring-boot-starter-security
+spring-boot-starter-validation
+spring-boot-starter-websocket
+postgresql (driver)
+jjwt-api, jjwt-impl, jjwt-jackson (JWT)
+flyway-core (DB migration)
+lombok (optional)
+springdoc-openapi (Swagger)
+```

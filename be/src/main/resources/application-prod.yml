@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/findmyteam
+    username: postgres
+    password: ${DB_PASSWORD}
+
+  flyway:
+    enabled: true
+
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 3600000
+  refresh-token-expiration: 604800000
+
+logging:
+  level:
+    root: WARN
+    com.findmyteam: INFO

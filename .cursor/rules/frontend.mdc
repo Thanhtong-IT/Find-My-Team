@@ -1,0 +1,74 @@
+---
+description: Rules for Find My Team Frontend (Flutter + Dio + Bloc + WebSocket)
+globs:
+  - "fe/lib/**/*.dart"
+  - "fe/pubspec.yaml"
+alwaysApply: false
+---
+
+# Find My Team — Frontend Coding Rules (Flutter)
+
+## Kiến trúc tổng quan
+
+Dự án Flutter áp dụng cấu trúc **Clean Architecture + Feature-First**:
+- **Core Layer**: Hạ tầng dùng chung (mạng REST API, WebSocket gateway, constants, utils).
+- **Features Layer**: Phân chia theo feature (auth, team, community, chat, notification, profile...). Mỗi feature chia nhỏ thành:
+  - `screens/` & `widgets/`: Lớp hiển thị UI.
+  - `bloc/` hoặc `cubit/`: Lớp quản lý logic trạng thái.
+  - `models/`: Chuyển đổi dữ liệu JSON ↔ Dart Object.
+  - `services/` hoặc `repositories/`: Tương tác với Dio Client hoặc WebSocket client.
+
+Đọc tài liệu kiến trúc: `realtime-discord-architecture-find-my-team.md` (root project).
+Đọc hướng dẫn code frontend: `fe/FLUTTER_CODING_GUIDE.md`.
+
+---
+
+## Quy tắc bắt buộc
+
+### 1. Tách biệt hoàn toàn UI và Business Logic
+- **KHÔNG** gọi trực tiếp các API service trong UI (Widgets/Screens). Mọi thao tác phải thông qua `Bloc` hoặc `Cubit`.
+- **KHÔNG** xử lý logic dữ liệu phức tạp trong hàm `build()`.
+- Sử dụng `BlocBuilder`, `BlocConsumer`, hoặc `BlocListener` để phản hồi các thay đổi trạng thái trong UI.
+
+### 2. Tương tác API và Network
+- Luôn sử dụng instance **Dio** đã cấu hình qua interceptor (`DioClient`) cho các request cần xác thực.
+- Cấu hình đính kèm JWT Access Token vào Header `Authorization: Bearer <token>`.
+- **Bắt buộc**: Xử lý Token Refresh rotation tự động khi nhận lỗi `401 Unauthorized` từ API bằng Refresh Token.
+- Mọi API response từ backend đều được bọc trong `ApiResponse<T>`:
+  ```dart
+  class ApiResponse<T> {
+    final bool success;
+    final T? data;
+    final String? message;
+  }
+  ```
+
+### 3. Realtime & WebSocket Gateway
+- Kết nối WebSocket phải được duy trì thông qua một Singleton `WebSocketClient` trong `core/websocket/`.
+- **Heartbeat**: Gửi message `{ "op": "heartbeat" }` mỗi 30 giây để duy trì presence online.
+- **Reconnect & Resume**: Khi bị ngắt kết nối đột ngột, phải tự động kết nối lại sau 5 giây và gửi resume payload kèm `lastEventId` để sync các event bị lỡ.
+- Lắng nghe event và đẩy về các Bloc tương ứng thông qua Stream/EventBus.
+
+### 4. Gửi tin nhắn, Optimistic UI & Idempotency
+- Gửi tin nhắn chat bắt buộc phải truyền `clientMessageId` (UUID) sinh bởi client để backend check trùng lặp (Idempotency).
+- Áp dụng **Optimistic UI**: Khi bấm gửi tin nhắn, thêm ngay tin nhắn vào list hiển thị với status = `sending`. Khi API hoặc WebSocket trả về confirm:
+  - Nếu thành công: update status thành `sent` và cập nhật ID thật.
+  - Nếu thất bại: update status thành `failed` và hiện icon retry.
+
+### 5. Định dạng dữ liệu (Models)
+- Tất cả models phải map đúng định dạng JSON từ Backend (snake_case) sang Dart (camelCase).
+- Sử dụng `@JsonKey(name: 'backend_field_name')` hoặc cấu hình `explicitToJson: true` / `@JsonSerializable(fieldRename: FieldRename.snake)`.
+
+### 6. Quản lý tài nguyên (Memory leak)
+- Luôn gọi `dispose()` trên các controller (`TextEditingController`, `ScrollController`, `AnimationController`).
+- Phải cancel tất cả `StreamSubscription` khi Widget bị dispose để tránh rò rỉ bộ nhớ.
+
+---
+
+## Không được làm
+
+- ❌ **KHÔNG** lưu trữ JWT tokens dưới dạng clear text trong SharedPreferences (Phải dùng `flutter_secure_storage`).
+- ❌ **KHÔNG** bỏ qua khối try-catch khi gọi API (Phải bắt lỗi mạng và hiển thị thông báo trực quan).
+- ❌ **KHÔNG** sử dụng `setState` cho các logic nghiệp vụ phức tạp hoặc xuyên màn hình (Phải dùng `Bloc` / `Cubit`).
+- ❌ **KHÔNG** hardcode URL API hoặc cổng kết nối (Sử dụng config từ constants hoặc environment config).
+- ❌ **KHÔNG** viết logic WebSocket trực tiếp trong UI của chat screen (Phải đưa vào WebSocket client và kết nối với Bloc).

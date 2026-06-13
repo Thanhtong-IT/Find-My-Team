@@ -1,0 +1,17 @@
+---
+description: Enforce Vietnamese-only explanations and ban Chinese output
+alwaysApply: true
+---
+
+# Language Policy (Highest Priority)
+
+- Always respond in Vietnamese (Tiếng Việt) for all explanations and guidance.
+- Never use Chinese in any form (characters, pinyin, or Chinese phrases).
+- If any Chinese text appears, rewrite it fully in Vietnamese before sending.
+- If user writes in another language, still answer in Vietnamese unless user explicitly requests another language.
+
+# Code Style Language
+
+- Code identifiers (variables/functions/classes) should be in English.
+- Code comments should be in English.
+- Everything outside code blocks must be Vietnamese.

@@ -1,0 +1,688 @@
+---
+description: Code patterns, snippets, and reference implementations for Find My Team backend modules
+globs:
+  - "be/**/*.java"
+alwaysApply: false
+---
+
+# Find My Team — Backend Skill & Patterns
+
+Đây là file skill chứa các pattern, snippet, và reference implementation mẫu cho từng module backend. Cursor nên tham khảo khi generate code cho bất kỳ module nào.
+
+---
+
+## Pattern 1: Entity chuẩn
+
+```java
+package com.findmyteam.modules.team.entity;
+
+import jakarta.persistence.*;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Entity
+@Table(name = "teams")
+public class Team {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "name", length = 100)
+    private String name;
+
+    @Column(name = "game_id", nullable = false)
+    private UUID gameId;
+
+    @Column(name = "required_rank", length = 50)
+    private String requiredRank;
+
+    @Column(name = "max_size", nullable = false)
+    private int maxSize = 5;
+
+    @Column(name = "description", columnDefinition = "TEXT")
+    private String description;
+
+    @Column(name = "required_roles", columnDefinition = "jsonb")
+    @Convert(converter = JsonbListConverter.class)
+    private List<String> requiredRoles;
+
+    @Column(name = "require_mic", nullable = false)
+    private boolean requireMic = false;
+
+    @Column(name = "status", nullable = false, length = 20)
+    private String status = "recruiting";
+
+    @Column(name = "owner_id", nullable = false)
+    private UUID ownerId;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private OffsetDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        createdAt = OffsetDateTime.now();
+        updatedAt = OffsetDateTime.now();
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = OffsetDateTime.now();
+    }
+
+    // Getters & Setters (hoặc dùng Lombok @Data)
+}
+```
+
+---
+
+## Pattern 2: Repository chuẩn
+
+```java
+package com.findmyteam.modules.team.repository;
+
+import com.findmyteam.modules.team.entity.Team;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface TeamRepository extends JpaRepository<Team, UUID> {
+
+    // Team đang tuyển, filter theo game
+    Page<Team> findByStatusAndGameId(String status, UUID gameId, Pageable pageable);
+
+    // Team đang tuyển (tất cả game)
+    Page<Team> findByStatus(String status, Pageable pageable);
+
+    // Team của user (qua team_members)
+    @Query("""
+        SELECT t FROM Team t
+        JOIN TeamMember tm ON tm.teamId = t.id
+        WHERE tm.userId = :userId AND t.status != 'disbanded'
+        """)
+    Optional<Team> findActiveTeamByUserId(UUID userId);
+
+    // Đếm member hiện tại
+    @Query("SELECT COUNT(tm) FROM TeamMember tm WHERE tm.teamId = :teamId")
+    int countMembersByTeamId(UUID teamId);
+}
+```
+
+---
+
+## Pattern 3: Service chuẩn (với Event Publishing)
+
+```java
+package com.findmyteam.modules.team.service;
+
+import com.findmyteam.common.event.EventPublisher;
+import com.findmyteam.common.event.EventType;
+import com.findmyteam.common.exception.BusinessException;
+import com.findmyteam.common.exception.ResourceNotFoundException;
+import com.findmyteam.modules.team.dto.*;
+import com.findmyteam.modules.team.entity.*;
+import com.findmyteam.modules.team.repository.*;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.*;
+
+@Service
+public class TeamService {
+
+    private final TeamRepository teamRepository;
+    private final TeamMemberRepository teamMemberRepository;
+    private final EventPublisher eventPublisher;
+
+    public TeamService(TeamRepository teamRepository,
+                       TeamMemberRepository teamMemberRepository,
+                       EventPublisher eventPublisher) {
+        this.teamRepository = teamRepository;
+        this.teamMemberRepository = teamMemberRepository;
+        this.eventPublisher = eventPublisher;
+    }
+
+    /**
+     * Tạo team mới.
+     * Luồng: validate → begin transaction → write DB → commit → publish event
+     */
+    public TeamResponse createTeam(UUID userId, CreateTeamRequest request) {
+        // 1. Business validation
+        teamRepository.findActiveTeamByUserId(userId).ifPresent(t -> {
+            throw new BusinessException("Bạn đã có nhóm. Hãy rời nhóm trước.");
+        });
+
+        // 2. Transaction: tạo team + thêm owner làm member
+        Team team = doCreateTeam(userId, request);
+
+        // 3. Publish event SAU KHI transaction commit
+        eventPublisher.publish(EventType.TEAM_CREATED, Map.of(
+            "teamId", team.getId(),
+            "ownerId", userId,
+            "gameId", request.gameId()
+        ));
+
+        return TeamResponse.from(team);
+    }
+
+    @Transactional
+    protected Team doCreateTeam(UUID userId, CreateTeamRequest request) {
+        Team team = new Team();
+        team.setGameId(request.gameId());
+        team.setRequiredRank(request.requiredRank());
+        team.setMaxSize(request.maxSize());
+        team.setDescription(request.description());
+        team.setRequiredRoles(request.requiredRoles());
+        team.setRequireMic(request.requireMic());
+        team.setOwnerId(userId);
+        team.setStatus("recruiting");
+        team = teamRepository.save(team);
+
+        TeamMember owner = new TeamMember();
+        owner.setTeamId(team.getId());
+        owner.setUserId(userId);
+        owner.setRole("owner");
+        owner.setReady(true);
+        teamMemberRepository.save(owner);
+
+        return team;
+    }
+
+    /**
+     * Chấp nhận yêu cầu tham gia.
+     * Validate quyền + check slot → add member → publish event
+     */
+    public void acceptJoinRequest(UUID ownerId, UUID requestId) {
+        JoinRequest joinRequest = joinRequestRepository.findById(requestId)
+            .orElseThrow(() -> new ResourceNotFoundException("Join request not found"));
+
+        Team team = teamRepository.findById(joinRequest.getTeamId())
+            .orElseThrow(() -> new ResourceNotFoundException("Team not found"));
+
+        // Check quyền: chỉ owner mới được accept
+        if (!team.getOwnerId().equals(ownerId)) {
+            throw new BusinessException("Chỉ chủ nhóm mới có thể chấp nhận yêu cầu");
+        }
+
+        // Check slot
+        int currentSize = teamMemberRepository.countByTeamId(team.getId());
+        if (currentSize >= team.getMaxSize()) {
+            throw new BusinessException("Nhóm đã đủ thành viên");
+        }
+
+        // Transaction
+        doAcceptJoinRequest(joinRequest, team);
+
+        // Publish events SAU commit
+        eventPublisher.publish(EventType.TEAM_MEMBER_JOINED, Map.of(
+            "teamId", team.getId(),
+            "userId", joinRequest.getUserId()
+        ));
+        eventPublisher.publish(EventType.JOIN_REQUEST_ACCEPTED, Map.of(
+            "requestId", requestId,
+            "teamId", team.getId(),
+            "userId", joinRequest.getUserId()
+        ));
+    }
+
+    @Transactional
+    protected void doAcceptJoinRequest(JoinRequest joinRequest, Team team) {
+        joinRequest.setStatus("accepted");
+        joinRequestRepository.save(joinRequest);
+
+        TeamMember member = new TeamMember();
+        member.setTeamId(team.getId());
+        member.setUserId(joinRequest.getUserId());
+        member.setRole("member");
+        teamMemberRepository.save(member);
+
+        // Cập nhật team status nếu đã đủ người
+        int newCount = teamMemberRepository.countByTeamId(team.getId());
+        if (newCount >= team.getMaxSize()) {
+            team.setStatus("full");
+            teamRepository.save(team);
+        }
+    }
+}
+```
+
+---
+
+## Pattern 4: Controller chuẩn
+
+```java
+package com.findmyteam.modules.team.controller;
+
+import com.findmyteam.common.dto.ApiResponse;
+import com.findmyteam.modules.team.dto.*;
+import com.findmyteam.modules.team.service.TeamService;
+import com.findmyteam.security.UserPrincipal;
+import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.*;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/teams")
+public class TeamController {
+
+    private final TeamService teamService;
+
+    public TeamController(TeamService teamService) {
+        this.teamService = teamService;
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<TeamResponse> createTeam(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateTeamRequest request) {
+        TeamResponse response = teamService.createTeam(principal.getId(), request);
+        return ApiResponse.success(response);
+    }
+
+    @GetMapping("/my")
+    public ApiResponse<TeamDetailResponse> getMyTeam(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return ApiResponse.success(teamService.getMyTeam(principal.getId()));
+    }
+
+    @GetMapping("/open")
+    public ApiResponse<Page<TeamResponse>> getOpenTeams(
+            @RequestParam(required = false) UUID gameId,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+        return ApiResponse.success(teamService.getOpenTeams(gameId, pageable));
+    }
+
+    @PostMapping("/{teamId}/join-requests")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<Void> sendJoinRequest(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId,
+            @RequestBody(required = false) JoinRequestBody body) {
+        teamService.sendJoinRequest(principal.getId(), teamId, body);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{teamId}/join-requests/{requestId}/accept")
+    public ApiResponse<Void> acceptJoinRequest(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId,
+            @PathVariable UUID requestId) {
+        teamService.acceptJoinRequest(principal.getId(), requestId);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{teamId}/join-requests/{requestId}/reject")
+    public ApiResponse<Void> rejectJoinRequest(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId,
+            @PathVariable UUID requestId) {
+        teamService.rejectJoinRequest(principal.getId(), requestId);
+        return ApiResponse.success(null);
+    }
+
+    @PutMapping("/{teamId}/ready")
+    public ApiResponse<Void> toggleReady(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId) {
+        teamService.toggleReady(principal.getId(), teamId);
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/{teamId}/leave")
+    public ApiResponse<Void> leaveTeam(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId) {
+        teamService.leaveTeam(principal.getId(), teamId);
+        return ApiResponse.success(null);
+    }
+
+    @DeleteMapping("/{teamId}")
+    public ApiResponse<Void> disbandTeam(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId) {
+        teamService.disbandTeam(principal.getId(), teamId);
+        return ApiResponse.success(null);
+    }
+}
+```
+
+---
+
+## Pattern 5: DTO chuẩn (Java Record)
+
+```java
+// Request DTO
+package com.findmyteam.modules.team.dto;
+
+import jakarta.validation.constraints.*;
+import java.util.List;
+import java.util.UUID;
+
+public record CreateTeamRequest(
+    @NotNull(message = "Game ID là bắt buộc")
+    UUID gameId,
+
+    @Size(max = 50, message = "Rank tối đa 50 ký tự")
+    String requiredRank,
+
+    @Min(value = 2, message = "Team tối thiểu 2 người")
+    @Max(value = 10, message = "Team tối đa 10 người")
+    int maxSize,
+
+    List<String> requiredRoles,
+
+    boolean requireMic,
+
+    @Size(max = 1000, message = "Mô tả tối đa 1000 ký tự")
+    String description
+) {}
+
+// Response DTO
+package com.findmyteam.modules.team.dto;
+
+import com.findmyteam.modules.team.entity.Team;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+public record TeamResponse(
+    UUID id,
+    String name,
+    UUID gameId,
+    String gameName,
+    String requiredRank,
+    int maxSize,
+    int currentMemberCount,
+    String description,
+    List<String> requiredRoles,
+    boolean requireMic,
+    String status,
+    OffsetDateTime createdAt
+) {
+    public static TeamResponse from(Team team) {
+        return new TeamResponse(
+            team.getId(),
+            team.getName(),
+            team.getGameId(),
+            null, // set by service with game lookup
+            team.getRequiredRank(),
+            team.getMaxSize(),
+            0, // set by service
+            team.getDescription(),
+            team.getRequiredRoles(),
+            team.isRequireMic(),
+            team.getStatus(),
+            team.getCreatedAt()
+        );
+    }
+}
+```
+
+---
+
+## Pattern 6: ApiResponse wrapper
+
+```java
+package com.findmyteam.common.dto;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record ApiResponse<T>(
+    boolean success,
+    T data,
+    String message
+) {
+    public static <T> ApiResponse<T> success(T data) {
+        return new ApiResponse<>(true, data, null);
+    }
+
+    public static <T> ApiResponse<T> success(T data, String message) {
+        return new ApiResponse<>(true, data, message);
+    }
+
+    public static <T> ApiResponse<T> error(String message) {
+        return new ApiResponse<>(false, null, message);
+    }
+}
+```
+
+---
+
+## Pattern 7: Global Exception Handler
+
+```java
+package com.findmyteam.common.exception;
+
+import com.findmyteam.common.dto.ApiResponse;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+import java.util.stream.Collectors;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleNotFound(ResourceNotFoundException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBusiness(BusinessException ex) {
+        return ApiResponse.error(ex.getMessage());
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    public ApiResponse<Void> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getFieldErrors().stream()
+            .map(e -> e.getField() + ": " + e.getDefaultMessage())
+            .collect(Collectors.joining(", "));
+        return ApiResponse.error(message);
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    public ApiResponse<Void> handleAccessDenied(Exception ex) {
+        return ApiResponse.error("Bạn không có quyền thực hiện thao tác này");
+    }
+
+    @ExceptionHandler(Exception.class)
+    @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
+    public ApiResponse<Void> handleGeneral(Exception ex) {
+        return ApiResponse.error("Đã xảy ra lỗi hệ thống");
+    }
+}
+```
+
+---
+
+## Pattern 8: EventPublisher (Redis Pub/Sub)
+
+```java
+package com.findmyteam.common.event;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
+import java.util.Map;
+
+@Component
+public class EventPublisher {
+
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
+
+    public EventPublisher(StringRedisTemplate redisTemplate, ObjectMapper objectMapper) {
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Publish event vào Redis Pub/Sub.
+     * GỌI SAU KHI @Transactional COMMIT, KHÔNG BAO GIỜ GỌI TRONG TRANSACTION.
+     */
+    public void publish(EventType eventType, Map<String, Object> data) {
+        try {
+            EventMessage message = new EventMessage(eventType.name(), data);
+            String json = objectMapper.writeValueAsString(message);
+
+            // Publish tới channel tương ứng
+            String channel = resolveChannel(eventType, data);
+            redisTemplate.convertAndSend(channel, json);
+        } catch (Exception e) {
+            // Log error but don't fail the request
+            // Event sẽ bị mất nhưng data đã commit vào DB
+        }
+    }
+
+    private String resolveChannel(EventType eventType, Map<String, Object> data) {
+        return switch (eventType) {
+            case MESSAGE_CREATED ->
+                "events:channel:" + data.get("channelId");
+            case TEAM_MEMBER_JOINED, TEAM_MEMBER_LEFT, TEAM_DISBANDED, TEAM_MEMBER_READY ->
+                "events:team:" + data.get("teamId");
+            case NOTIFICATION_NEW, JOIN_REQUEST_ACCEPTED, JOIN_REQUEST_REJECTED,
+                 MATCH_CREATED, INVITATION_RECEIVED ->
+                "events:user:" + data.get("userId");
+            case JOIN_REQUEST_CREATED ->
+                "events:user:" + data.get("ownerId");
+            default ->
+                "events:global";
+        };
+    }
+
+    public record EventMessage(String type, Map<String, Object> data) {}
+}
+```
+
+---
+
+## Pattern 9: PresenceService (Redis)
+
+```java
+package com.findmyteam.websocket;
+
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+import java.time.Duration;
+import java.util.Set;
+import java.util.UUID;
+
+@Service
+public class PresenceService {
+
+    private static final Duration PRESENCE_TTL = Duration.ofSeconds(60);
+    private final StringRedisTemplate redis;
+
+    public PresenceService(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
+    /** User lên online khi WebSocket connect */
+    public void setOnline(UUID userId) {
+        redis.opsForValue().set(
+            "presence:user:" + userId, "online", PRESENCE_TTL
+        );
+    }
+
+    /** Heartbeat: gia hạn TTL */
+    public void heartbeat(UUID userId) {
+        redis.expire("presence:user:" + userId, PRESENCE_TTL);
+    }
+
+    /** User offline khi WebSocket disconnect */
+    public void setOffline(UUID userId) {
+        redis.delete("presence:user:" + userId);
+    }
+
+    /** Kiểm tra user có online không */
+    public boolean isOnline(UUID userId) {
+        return Boolean.TRUE.equals(
+            redis.hasKey("presence:user:" + userId)
+        );
+    }
+
+    /** Thêm user vào room (team/channel) */
+    public void joinRoom(String roomKey, UUID userId) {
+        redis.opsForSet().add(roomKey, userId.toString());
+    }
+
+    /** Xóa user khỏi room */
+    public void leaveRoom(String roomKey, UUID userId) {
+        redis.opsForSet().remove(roomKey, userId.toString());
+    }
+
+    /** Lấy danh sách user online trong room */
+    public Set<String> getOnlineInRoom(String roomKey) {
+        return redis.opsForSet().members(roomKey);
+    }
+}
+```
+
+---
+
+## Pattern 10: Message gửi tin nhắn (Idempotency)
+
+```java
+// Trong ChatService
+@Transactional
+public MessageResponse sendMessage(UUID senderId, UUID channelId, SendMessageRequest req) {
+    // Idempotency check: nếu clientMessageId đã tồn tại → trả message cũ
+    if (req.clientMessageId() != null) {
+        Optional<Message> existing = messageRepository
+            .findBySenderIdAndClientMessageId(senderId, req.clientMessageId());
+        if (existing.isPresent()) {
+            return MessageResponse.from(existing.get());
+        }
+    }
+
+    // Tạo message mới
+    Message message = new Message();
+    message.setChannelId(channelId);
+    message.setSenderId(senderId);
+    message.setContent(req.content());
+    message.setImageUrl(req.imageUrl());
+    message.setClientMessageId(req.clientMessageId());
+    message = messageRepository.save(message);
+
+    return MessageResponse.from(message);
+}
+// Sau khi return → controller gọi eventPublisher.publish(MESSAGE_CREATED, ...)
+```
+
+---
+
+## Mapping: Frontend Screen → Backend Module
+
+| Frontend Screen | Backend Module | Key Endpoints |
+|---|---|---|
+| LoginScreen | auth | `POST /api/auth/login` |
+| RegisterScreen | auth | `POST /api/auth/register` |
+| SetupProfileScreen | user | `PUT /api/users/me/profile`, `POST /api/users/me/game-profile` |
+| HomeScreen | game, team | `GET /api/games/popular`, `GET /api/teams/recruiting` |
+| ExploreScreen | team, explore | `GET /api/teams/open`, `GET /api/players/online` |
+| CreateRequestScreen | team | `POST /api/team-requests` |
+| TeamScreen (Nhóm tab) | team | `POST /api/teams`, `GET /api/teams/my` |
+| TeamScreen (Yêu cầu tab) | team | `GET /api/teams/my/join-requests`, `POST .../accept` |
+| TeamScreen (Cộng đồng tab) | community | `GET /api/communities` |
+| CommunityChatScreen | chat | `GET/POST .../messages` |
+| NotificationScreen | notification | `GET /api/notifications` |
+| ProfileScreen | user | `GET /api/users/me/profile` |
