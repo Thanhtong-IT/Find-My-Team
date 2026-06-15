@@ -1,0 +1,49 @@
+name: find_my_team
+description: "Ứng dụng kết nối người chơi game - Tìm teammate, tạo team, giao lưu cộng đồng"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State Management
+  flutter_bloc: ^8.1.6
+  equatable: ^2.0.5
+
+  # Network
+  dio: ^5.4.3+1
+
+  # Local Storage
+  flutter_secure_storage: ^9.0.0
+
+  # WebSocket
+  web_socket_channel: ^3.0.1
+
+  # Dependency Injection
+  get_it: ^8.0.3
+
+  # JSON Serialization
+  json_annotation: ^4.9.0
+
+  # Utility
+  uuid: ^4.5.1
+  connectivity_plus: ^6.1.1
+  intl: ^0.19.0
+  shared_preferences: ^2.5.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  json_serializable: ^6.8.0
+
+flutter:
+  uses-material-design: true

@@ -23,15 +23,18 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
     private final RoomManager roomManager;
     private final PresenceService presenceService;
     private final ObjectMapper objectMapper;
+    private final EventSubscriber eventSubscriber;
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
     public FindMyTeamWebSocketHandler(RoomManager roomManager,
                                      PresenceService presenceService,
-                                     ObjectMapper objectMapper) {
+                                     ObjectMapper objectMapper,
+                                     @org.springframework.context.annotation.Lazy EventSubscriber eventSubscriber) {
         this.roomManager = roomManager;
         this.presenceService = presenceService;
         this.objectMapper = objectMapper;
+        this.eventSubscriber = eventSubscriber;
     }
 
     @Override
@@ -54,7 +57,7 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
             "userId", userId
         )));
 
-        subscribeToUserChannel(userId);
+        subscribeToUserChannel(userId, sessionId);
     }
 
     @Override
@@ -100,25 +103,53 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
 
         String sessionId = session.getId();
         String userId = (String) session.getAttributes().get("userId");
-        roomManager.joinRoom(roomId, sessionId, userId);
+
+        String resolvedRoomId = switch (roomType) {
+            case "team" -> "room:team:" + roomId;
+            case "channel" -> "room:channel:" + roomId;
+            case "community" -> "room:community:" + roomId;
+            default -> roomId;
+        };
+
+        roomManager.joinRoom(resolvedRoomId, sessionId, userId);
 
         switch (roomType) {
-            case "team" -> presenceService.joinTeamRoom(UUID.fromString(userId), UUID.fromString(roomId));
-            case "channel" -> presenceService.joinChannelRoom(UUID.fromString(userId), UUID.fromString(roomId));
+            case "team" -> {
+                presenceService.joinTeamRoom(UUID.fromString(userId), UUID.fromString(roomId));
+                eventSubscriber.subscribeToTeamChannel(UUID.fromString(roomId));
+            }
+            case "channel" -> {
+                presenceService.joinChannelRoom(UUID.fromString(userId), UUID.fromString(roomId));
+                eventSubscriber.subscribeToChannelChannel(UUID.fromString(roomId));
+            }
         }
 
-        log.debug("Session {} subscribed to {}:{}", sessionId, roomType, roomId);
+        log.debug("Session {} subscribed to {}:{}", sessionId, roomType, resolvedRoomId);
     }
 
     private void handleUnsubscribe(WebSocketSession session, WsMessage message) {
         String roomId = (String) message.data.get("roomId");
+        String roomType = (String) message.data.get("roomType");
 
         if (roomId == null) return;
 
         String sessionId = session.getId();
-        roomManager.leaveRoom(roomId, sessionId);
-
-        log.debug("Session {} unsubscribed from {}", sessionId, roomId);
+        if (roomType != null) {
+            String resolvedRoomId = switch (roomType) {
+                case "team" -> "room:team:" + roomId;
+                case "channel" -> "room:channel:" + roomId;
+                case "community" -> "room:community:" + roomId;
+                default -> roomId;
+            };
+            roomManager.leaveRoom(resolvedRoomId, sessionId);
+            log.debug("Session {} unsubscribed from {}:{}", sessionId, roomType, resolvedRoomId);
+        } else {
+            roomManager.leaveRoom("room:team:" + roomId, sessionId);
+            roomManager.leaveRoom("room:channel:" + roomId, sessionId);
+            roomManager.leaveRoom("room:community:" + roomId, sessionId);
+            roomManager.leaveRoom(roomId, sessionId);
+            log.debug("Session {} unsubscribed from all prefixes for {}", sessionId, roomId);
+        }
     }
 
     public void broadcastToRoom(String roomId, Object payload) {
@@ -152,9 +183,9 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void subscribeToUserChannel(String userId) {
+    private void subscribeToUserChannel(String userId, String sessionId) {
         String userRoom = "user:" + userId;
-        roomManager.joinRoom(userRoom, userId, userId);
+        roomManager.joinRoom(userRoom, sessionId, userId);
     }
 
     private void sendMessage(WebSocketSession session, WsMessage message) {
