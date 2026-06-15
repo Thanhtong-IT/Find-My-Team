@@ -34,6 +34,7 @@ public class TeamRequestService {
         this.eventPublisher = eventPublisher;
     }
 
+    @Transactional
     public TeamRequestResponse createTeamRequest(UUID userId, CreateTeamRequestDto request) {
         teamRequestRepository.findByUserId(userId, Pageable.unpaged())
             .forEach(r -> {

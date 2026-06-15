@@ -38,6 +38,7 @@ public class InvitationService {
         this.eventPublisher = eventPublisher;
     }
 
+    @Transactional
     public InvitationResponse createInvitation(UUID inviterId, CreateInvitationRequest request) {
         if (inviterId.equals(request.inviteeId())) {
             throw new BusinessException("Không thể tự mời chính mình");

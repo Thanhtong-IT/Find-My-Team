@@ -12,6 +12,7 @@ import java.util.UUID;
 @Repository
 public interface TeamMemberRepository extends JpaRepository<TeamMember, UUID> {
 
+    @Query("SELECT tm FROM TeamMember tm JOIN FETCH tm.user WHERE tm.teamId = :teamId")
     List<TeamMember> findByTeamId(UUID teamId);
 
     Optional<TeamMember> findByTeamIdAndUserId(UUID teamId, UUID userId);

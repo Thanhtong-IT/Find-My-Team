@@ -19,6 +19,6 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     Optional<Message> findBySenderIdAndClientMessageId(UUID senderId, String clientMessageId);
 
     @Modifying
-    @Query("UPDATE Message m SET m.updatedAt = CURRENT_TIMESTAMP WHERE m.channelId = :channelId")
+    @Query(value = "UPDATE messages SET updated_at = NOW() WHERE channel_id = :channelId", nativeQuery = true)
     void touchChannel(UUID channelId);
 }

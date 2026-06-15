@@ -45,7 +45,7 @@ public class UnreadCountWorker implements MessageListener {
 
     @PostConstruct
     public void init() {
-        listenerContainer.addMessageListener(this, new ChannelTopic("events:channel:*"));
+        listenerContainer.addMessageListener(this, new org.springframework.data.redis.listener.PatternTopic("events:channel:*"));
         log.info("UnreadCountWorker initialized");
     }
 

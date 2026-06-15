@@ -12,6 +12,7 @@ import com.findmyteam.modules.team.entity.*;
 import com.findmyteam.modules.team.repository.*;
 import com.findmyteam.websocket.PresenceService;
 import com.findmyteam.websocket.EventSubscriber;
+import com.findmyteam.modules.auth.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class TeamService {
     private final EventPublisher eventPublisher;
     private final PresenceService presenceService;
     private final EventSubscriber eventSubscriber;
+    private final UserRepository userRepository;
 
     public TeamService(TeamRepository teamRepository,
                       TeamMemberRepository teamMemberRepository,
@@ -40,7 +42,8 @@ public class TeamService {
                       GameRepository gameRepository,
                       EventPublisher eventPublisher,
                       PresenceService presenceService,
-                      EventSubscriber eventSubscriber) {
+                      EventSubscriber eventSubscriber,
+                      UserRepository userRepository) {
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
         this.joinRequestRepository = joinRequestRepository;
@@ -49,6 +52,7 @@ public class TeamService {
         this.eventPublisher = eventPublisher;
         this.presenceService = presenceService;
         this.eventSubscriber = eventSubscriber;
+        this.userRepository = userRepository;
     }
 
     @Transactional(readOnly = true)
@@ -107,6 +111,7 @@ public class TeamService {
         return TeamDetailResponse.from(team, members, gameName);
     }
 
+    @Transactional
     public TeamDetailResponse createTeam(UUID userId, CreateTeamRequest request) {
         teamRepository.findActiveTeamByUserId(userId).ifPresent(t -> {
             throw new BusinessException("Bạn đã có nhóm. Hãy rời nhóm trước.");
@@ -154,6 +159,7 @@ public class TeamService {
         return team;
     }
 
+    @Transactional
     public void disbandTeam(UUID userId, UUID teamId) {
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
@@ -180,6 +186,7 @@ public class TeamService {
             });
     }
 
+    @Transactional
     public void leaveTeam(UUID userId, UUID teamId) {
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
@@ -188,7 +195,14 @@ public class TeamService {
             throw new BusinessException("Chủ nhóm không thể rời nhóm. Hãy giải tán hoặc chuyển quyền.");
         }
 
+        int countBefore = teamMemberRepository.countByTeamId(teamId);
+
         doLeaveTeam(userId, teamId);
+
+        if (countBefore - 1 < team.getMaxSize() && "full".equals(team.getStatus())) {
+            team.setStatus("recruiting");
+            teamRepository.save(team);
+        }
 
         eventPublisher.publish(EventType.TEAM_MEMBER_LEFT, Map.of(
             "teamId", teamId,
@@ -202,6 +216,7 @@ public class TeamService {
         presenceService.leaveTeamRoom(userId, teamId);
     }
 
+    @Transactional
     public void toggleReady(UUID userId, UUID teamId) {
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
@@ -225,6 +240,7 @@ public class TeamService {
         teamMemberRepository.save(member);
     }
 
+    @Transactional
     public void sendJoinRequest(UUID userId, UUID teamId, JoinRequestBody body) {
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
@@ -243,11 +259,19 @@ public class TeamService {
 
         JoinRequest request = doSendJoinRequest(userId, teamId, body != null ? body.message() : null);
 
+        com.findmyteam.modules.auth.entity.User applicant = userRepository.findById(userId)
+            .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
+        String displayName = applicant.getDisplayName();
+        if (displayName == null || displayName.isEmpty()) {
+            displayName = applicant.getUsername();
+        }
+
         eventPublisher.publish(EventType.JOIN_REQUEST_CREATED, Map.of(
             "requestId", request.getId(),
             "teamId", teamId,
             "userId", userId,
-            "ownerId", team.getOwnerId()
+            "ownerId", team.getOwnerId(),
+            "displayName", displayName
         ));
     }
 
@@ -276,6 +300,7 @@ public class TeamService {
         return PageResponse.from(requests.map(JoinRequestResponse::from));
     }
 
+    @Transactional
     public void acceptJoinRequest(UUID ownerId, UUID teamId, UUID requestId) {
         JoinRequest joinRequest = joinRequestRepository.findById(requestId)
             .orElseThrow(() -> new ResourceNotFoundException("Join request", "id", requestId));
@@ -294,9 +319,21 @@ public class TeamService {
 
         doAcceptJoinRequest(joinRequest, team);
 
+        String displayName = "Thành viên mới";
+        if (joinRequest.getUser() != null) {
+            displayName = joinRequest.getUser().getDisplayName();
+            if (displayName == null || displayName.isEmpty()) {
+                displayName = joinRequest.getUser().getUsername();
+            }
+        }
+        if (displayName == null || displayName.isEmpty()) {
+            displayName = "Thành viên mới";
+        }
+
         eventPublisher.publish(EventType.TEAM_MEMBER_JOINED, Map.of(
             "teamId", team.getId(),
-            "userId", joinRequest.getUserId()
+            "userId", joinRequest.getUserId(),
+            "displayName", displayName
         ));
         eventPublisher.publish(EventType.JOIN_REQUEST_ACCEPTED, Map.of(
             "requestId", requestId,
@@ -326,6 +363,7 @@ public class TeamService {
         }
     }
 
+    @Transactional
     public void rejectJoinRequest(UUID ownerId, UUID teamId, UUID requestId) {
         JoinRequest joinRequest = joinRequestRepository.findById(requestId)
             .orElseThrow(() -> new ResourceNotFoundException("Join request", "id", requestId));

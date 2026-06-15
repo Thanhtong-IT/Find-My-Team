@@ -26,6 +26,22 @@ public class EventPublisher {
      * GỌI SAU KHI @Transactional COMMIT, KHÔNG BAO GIỜ GỌI TRONG TRANSACTION.
      */
     public void publish(EventType eventType, Map<String, Object> data) {
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            log.debug("Transaction active, registering post-commit synchronization for event {}", eventType);
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        doPublish(eventType, data);
+                    }
+                }
+            );
+        } else {
+            doPublish(eventType, data);
+        }
+    }
+
+    private void doPublish(EventType eventType, Map<String, Object> data) {
         try {
             EventMessage message = new EventMessage(eventType.name(), data);
             String json = objectMapper.writeValueAsString(message);

@@ -34,6 +34,7 @@ public class MatchService {
         this.eventPublisher = eventPublisher;
     }
 
+    @Transactional
     public void createSwipe(UUID userId, CreateSwipeRequest request) {
         if (userId.equals(request.targetId())) {
             throw new BusinessException("Không thể tự swipe bản thân");

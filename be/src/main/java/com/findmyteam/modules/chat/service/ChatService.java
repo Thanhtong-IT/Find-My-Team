@@ -53,6 +53,7 @@ public class ChatService {
         return PageResponse.from(messages.map(MessageResponse::from));
     }
 
+    @Transactional
     public MessageResponse sendMessage(UUID userId, UUID communityId, UUID channelId, SendMessageRequest request) {
         Channel channel = channelRepository.findById(channelId)
             .orElseThrow(() -> new ResourceNotFoundException("Channel", "id", channelId));
