@@ -12,6 +12,7 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     on<ProfileLoadRequested>(_onLoadRequested);
     on<ProfileUpdateRequested>(_onUpdateRequested);
     on<GameProfileAddRequested>(_onAddGameProfile);
+    on<GameProfileDeleteRequested>(_onDeleteGameProfile);
     on<PopularGamesLoadRequested>(_onLoadPopularGames);
   }
 
@@ -69,6 +70,23 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
       emit(state.copyWith(
         status: ProfileStatus.error,
         errorMessage: 'Không thể thêm game profile: $e',
+      ));
+    }
+  }
+
+  Future<void> _onDeleteGameProfile(
+    GameProfileDeleteRequested event,
+    Emitter<ProfileState> emit,
+  ) async {
+    emit(state.copyWith(status: ProfileStatus.loading));
+    try {
+      await _userApiService.deleteGameProfile(event.profileId);
+      final profile = await _userApiService.getMyProfile();
+      emit(state.copyWith(status: ProfileStatus.success, profile: profile));
+    } catch (e) {
+      emit(state.copyWith(
+        status: ProfileStatus.error,
+        errorMessage: 'Không thể xóa game profile: $e',
       ));
     }
   }

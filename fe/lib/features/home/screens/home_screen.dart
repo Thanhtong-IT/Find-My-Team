@@ -1,50 +1,143 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/network/dio_client.dart';
 import '../../notification/screens/notification_screen.dart';
+import '../../profile/models/game_model.dart';
+import '../../team/services/team_api_service.dart';
+import '../../team/models/team_model.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<GameModel> _games = [];
+  List<TeamModel> _teams = [];
+  bool _isLoadingGames = true;
+  bool _isLoadingTeams = true;
+  String? _gamesError;
+  String? _teamsError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    await Future.wait([
+      _loadGames(),
+      _loadTeams(),
+    ]);
+  }
+
+  Future<void> _loadGames() async {
+    if (!mounted) return;
+    setState(() => _isLoadingGames = true);
+
+    try {
+      final resp = await DioClient.get(ApiConstants.popularGames);
+      final json = resp.data as Map<String, dynamic>?;
+      if (json != null && json['success'] == true) {
+        final list = json['data'] as List<dynamic>?;
+        if (list != null && mounted) {
+          setState(() {
+            _games = list.map((e) => GameModel.fromJson(e as Map<String, dynamic>)).toList();
+            _isLoadingGames = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoadingGames = false);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _gamesError = 'Không thể tải games';
+          _isLoadingGames = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadTeams() async {
+    if (!mounted) return;
+    setState(() => _isLoadingTeams = true);
+
+    try {
+      final teams = await TeamApiService().getRecruitingTeams(limit: 5);
+      if (mounted) {
+        setState(() {
+          _teams = teams;
+          _isLoadingTeams = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _teamsError = 'Không thể tải đội';
+          _isLoadingTeams = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: const [
-                    SizedBox(height: 20),
-                    _HomeHeader(),
-                    SizedBox(height: 20),
-                    _HomeSearchBar(),
-                    SizedBox(height: 24),
-                    _FeaturedActionCard(),
-                    SizedBox(height: 24),
-                    _SectionTitle(title: 'Game phổ biến'),
-                    SizedBox(height: 12),
-                  ],
+        child: RefreshIndicator(
+          onRefresh: _loadData,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: const [
+                      SizedBox(height: 20),
+                      _HomeHeader(),
+                      SizedBox(height: 20),
+                      _HomeSearchBar(),
+                      SizedBox(height: 24),
+                      _FeaturedActionCard(),
+                      SizedBox(height: 24),
+                      _SectionTitle(title: 'Game phổ biến'),
+                      SizedBox(height: 12),
+                    ],
+                  ),
                 ),
-              ),
-              const _PopularGamesSection(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: const [
-                    SizedBox(height: 24),
-                    _SectionTitle(title: 'Đội đang tuyển'),
-                    SizedBox(height: 12),
-                  ],
+                _PopularGamesSection(
+                  games: _games,
+                  isLoading: _isLoadingGames,
+                  error: _gamesError,
+                  onRetry: _loadGames,
                 ),
-              ),
-              const _RecruitingTeamsSection(),
-              const SizedBox(height: 24),
-            ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: const [
+                      SizedBox(height: 24),
+                      _SectionTitle(title: 'Đội đang tuyển'),
+                      SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+                _RecruitingTeamsSection(
+                  teams: _teams,
+                  isLoading: _isLoadingTeams,
+                  error: _teamsError,
+                  onRetry: _loadTeams,
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
           ),
         ),
       ),
@@ -169,27 +262,60 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _PopularGamesSection extends StatelessWidget {
-  const _PopularGamesSection();
+  final List<GameModel> games;
+  final bool isLoading;
+  final String? error;
+  final VoidCallback onRetry;
 
-  static const _games = [
-    {'name': 'Liên Quân', 'teams': '24 đội', 'icon': Icons.sports_esports_rounded},
-    {'name': 'Valorant', 'teams': '18 đội', 'icon': Icons.sports_esports_rounded},
-    {'name': 'Liên Minh', 'teams': '32 đội', 'icon': Icons.sports_esports_rounded},
-    {'name': 'PUBG Mobile', 'teams': '15 đội', 'icon': Icons.sports_esports_rounded},
-  ];
+  const _PopularGamesSection({
+    required this.games,
+    required this.isLoading,
+    this.error,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const SizedBox(
+        height: 110,
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (error != null && games.isEmpty) {
+      return SizedBox(
+        height: 110,
+        child: Center(
+          child: TextButton(
+            onPressed: onRetry,
+            child: const Text('Thử lại'),
+          ),
+        ),
+      );
+    }
+
+    if (games.isEmpty) {
+      return const SizedBox(
+        height: 110,
+        child: Center(child: Text('Chưa có game')),
+      );
+    }
+
     return SizedBox(
       height: 110,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: _games.length,
+        itemCount: games.length,
         separatorBuilder: (context, index) => const SizedBox(width: 12),
         itemBuilder: (context, index) {
-          final game = _games[index];
-          return _PopularGameCard(name: game['name'] as String, teams: game['teams'] as String, icon: game['icon'] as IconData);
+          final game = games[index];
+          return _PopularGameCard(
+            name: game.name,
+            teams: '${game.ranks.length} ranks',
+            icon: Icons.sports_esports_rounded,
+          );
         },
       ),
     );
@@ -233,17 +359,65 @@ class _PopularGameCard extends StatelessWidget {
 }
 
 class _RecruitingTeamsSection extends StatelessWidget {
-  const _RecruitingTeamsSection();
+  final List<TeamModel> teams;
+  final bool isLoading;
+  final String? error;
+  final VoidCallback onRetry;
 
-  static final _teams = [
-    {'name': 'Blue Wolves', 'game': 'Liên Quân Mobile', 'rank': 'Kim cương trở lên', 'need': 'Cần 2 người'},
-    {'name': 'Valorant VN Squad', 'game': 'Valorant', 'rank': 'Gold - Platinum', 'need': 'Cần 1 Duelist'},
-    {'name': 'PUBG Chill Team', 'game': 'PUBG Mobile', 'rank': 'Không yêu cầu', 'need': 'Cần 3 người'},
-  ];
+  const _RecruitingTeamsSection({
+    required this.teams,
+    required this.isLoading,
+    this.error,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(children: _teams.map((team) => Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6), child: _RecruitingTeamCard(name: team['name'] as String, game: team['game'] as String, rank: team['rank'] as String, need: team['need'] as String))).toList());
+    if (isLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (error != null && teams.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Center(
+          child: TextButton(
+            onPressed: onRetry,
+            child: const Text('Thử lại'),
+          ),
+        ),
+      );
+    }
+
+    if (teams.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20),
+        child: SizedBox(
+          height: 100,
+          child: Center(child: Text('Chưa có đội nào đang tuyển')),
+        ),
+      );
+    }
+
+    return Column(
+      children: teams.map((team) {
+        final slotsNeeded = team.maxMembers - team.members.length;
+        final needText = slotsNeeded > 0 ? 'Cần $slotsNeeded người' : 'Đã đủ';
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+          child: _RecruitingTeamCard(
+            name: team.name,
+            game: team.gameName,
+            rank: team.requiredRank ?? 'Không yêu cầu',
+            need: needText,
+          ),
+        );
+      }).toList(),
+    );
   }
 }
 

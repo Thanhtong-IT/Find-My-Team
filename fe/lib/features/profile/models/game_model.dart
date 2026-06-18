@@ -3,6 +3,8 @@ class GameModel {
   final String name;
   final String? description;
   final String? iconUrl;
+  final String? gradientStart;
+  final String? gradientEnd;
   final List<String> ranks;
   final List<String> roles;
 
@@ -11,6 +13,8 @@ class GameModel {
     required this.name,
     this.description,
     this.iconUrl,
+    this.gradientStart,
+    this.gradientEnd,
     this.ranks = const [],
     this.roles = const [],
   });
@@ -21,6 +25,8 @@ class GameModel {
       name: json['name'] as String? ?? 'Unknown',
       description: json['description'] as String?,
       iconUrl: json['iconUrl'] as String?,
+      gradientStart: json['gradientStart'] as String?,
+      gradientEnd: json['gradientEnd'] as String?,
       ranks: (json['ranks'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??

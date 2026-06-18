@@ -1,5 +1,6 @@
 import 'package:equatable/equatable.dart';
 import '../models/team_model.dart';
+import '../models/invitation_model.dart';
 
 enum TeamStatus { initial, loading, loaded, error }
 
@@ -8,6 +9,8 @@ class TeamState extends Equatable {
   final TeamModel? currentTeam;
   final List<JoinRequestModel> joinRequests;
   final List<TeamModel> openTeams;
+  final List<InvitationModel> receivedInvitations;
+  final List<InvitationModel> sentInvitations;
   final String? errorMessage;
   final String? successMessage;
 
@@ -16,6 +19,8 @@ class TeamState extends Equatable {
     this.currentTeam,
     this.joinRequests = const [],
     this.openTeams = const [],
+    this.receivedInvitations = const [],
+    this.sentInvitations = const [],
     this.errorMessage,
     this.successMessage,
   });
@@ -25,6 +30,8 @@ class TeamState extends Equatable {
     TeamModel? currentTeam,
     List<JoinRequestModel>? joinRequests,
     List<TeamModel>? openTeams,
+    List<InvitationModel>? receivedInvitations,
+    List<InvitationModel>? sentInvitations,
     String? errorMessage,
     String? successMessage,
     bool clearTeam = false,
@@ -34,6 +41,8 @@ class TeamState extends Equatable {
       currentTeam: clearTeam ? null : (currentTeam ?? this.currentTeam),
       joinRequests: joinRequests ?? this.joinRequests,
       openTeams: openTeams ?? this.openTeams,
+      receivedInvitations: receivedInvitations ?? this.receivedInvitations,
+      sentInvitations: sentInvitations ?? this.sentInvitations,
       errorMessage: errorMessage,
       successMessage: successMessage,
     );
@@ -42,5 +51,5 @@ class TeamState extends Equatable {
   bool get hasTeam => currentTeam != null;
 
   @override
-  List<Object?> get props => [status, currentTeam, joinRequests, openTeams, errorMessage, successMessage];
+  List<Object?> get props => [status, currentTeam, joinRequests, openTeams, receivedInvitations, sentInvitations, errorMessage, successMessage];
 }

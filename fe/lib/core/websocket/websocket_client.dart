@@ -13,6 +13,7 @@ enum WsEventType {
   // Messaging
   messageCreated,
   // Team
+  teamCreated,
   teamMemberJoined,
   teamMemberLeft,
   teamMemberReady,
@@ -133,6 +134,7 @@ class WebSocketClient {
       }
 
       final type = _parseEventType(eventTypeStr);
+
       if (type != WsEventType.unknown) {
         final event = WsIncomingEvent(type: type, data: eventData, eventId: eventId);
         _eventController.add(event);
@@ -150,6 +152,8 @@ class WebSocketClient {
     switch (op) {
       case 'MESSAGE_CREATED':
         return WsEventType.messageCreated;
+      case 'TEAM_CREATED':
+        return WsEventType.teamCreated;
       case 'TEAM_MEMBER_JOINED':
         return WsEventType.teamMemberJoined;
       case 'TEAM_MEMBER_LEFT':

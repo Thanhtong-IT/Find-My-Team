@@ -13,6 +13,8 @@ import com.findmyteam.modules.team.repository.*;
 import com.findmyteam.websocket.PresenceService;
 import com.findmyteam.websocket.EventSubscriber;
 import com.findmyteam.modules.auth.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -20,10 +22,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
 public class TeamService {
+
+    private static final Logger log = LoggerFactory.getLogger(TeamService.class);
 
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
@@ -249,15 +254,36 @@ public class TeamService {
             throw new BusinessException("Nhóm này không còn tuyển thành viên");
         }
 
+        // Check user đang là thành viên của team này
         if (teamMemberRepository.existsByTeamIdAndUserId(teamId, userId)) {
             throw new BusinessException("Bạn đã là thành viên nhóm");
         }
 
-        if (joinRequestRepository.existsByTeamIdAndUserId(teamId, userId)) {
+        // Check user đang ở team khác (không được xin team mới)
+        Optional<Team> currentTeam = teamRepository.findActiveTeamByUserId(userId);
+        if (currentTeam.isPresent()) {
+            throw new BusinessException("Bạn đang ở trong một đội khác");
+        }
+
+        // Check có PENDING request không → chặn
+        if (joinRequestRepository.existsByTeamIdAndUserIdAndStatus(teamId, userId, "pending")) {
             throw new BusinessException("Bạn đã gửi yêu cầu trước đó");
         }
 
-        JoinRequest request = doSendJoinRequest(userId, teamId, body != null ? body.message() : null);
+        // Tìm request cũ (ACCEPTED/REJECTED/CANCELLED) → reuse
+        Optional<JoinRequest> existingRequest = joinRequestRepository.findByTeamIdAndUserId(teamId, userId);
+        JoinRequest request;
+
+        if (existingRequest.isPresent()) {
+            // Reuse row cũ, chỉ update status và message
+            request = existingRequest.get();
+            request.setStatus("pending");
+            request.setMessage(body != null ? body.message() : null);
+            request = joinRequestRepository.save(request);
+        } else {
+            // Tạo request mới
+            request = doSendJoinRequest(userId, teamId, body != null ? body.message() : null);
+        }
 
         com.findmyteam.modules.auth.entity.User applicant = userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException("User", "id", userId));
@@ -317,6 +343,9 @@ public class TeamService {
             throw new BusinessException("Nhóm đã đủ thành viên");
         }
 
+        UUID requesterId = joinRequest.getUserId();
+        log.info("=== ACCEPT JOIN REQUEST === requesterId={}, teamId={}", requesterId, teamId);
+
         doAcceptJoinRequest(joinRequest, team);
 
         String displayName = "Thành viên mới";
@@ -330,18 +359,23 @@ public class TeamService {
             displayName = "Thành viên mới";
         }
 
+        // Publish TEAM_MEMBER_JOINED đến team channel
+        log.info("Publishing TEAM_MEMBER_JOINED to events:team:{}", team.getId());
         eventPublisher.publish(EventType.TEAM_MEMBER_JOINED, Map.of(
             "teamId", team.getId(),
-            "userId", joinRequest.getUserId(),
+            "userId", requesterId,
             "displayName", displayName
         ));
+
+        // Publish JOIN_REQUEST_ACCEPTED đến user channel
+        log.info("Publishing JOIN_REQUEST_ACCEPTED to events:user:{}", requesterId);
         eventPublisher.publish(EventType.JOIN_REQUEST_ACCEPTED, Map.of(
             "requestId", requestId,
             "teamId", team.getId(),
-            "userId", joinRequest.getUserId()
+            "userId", requesterId
         ));
 
-        presenceService.joinTeamRoom(joinRequest.getUserId(), team.getId());
+        presenceService.joinTeamRoom(requesterId, team.getId());
         eventSubscriber.subscribeToTeamChannel(team.getId());
     }
 

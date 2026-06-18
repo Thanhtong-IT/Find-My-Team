@@ -58,14 +58,15 @@ public class EventPublisher {
     private String resolveChannel(EventType eventType, Map<String, Object> data) {
         return switch (eventType) {
             case MESSAGE_CREATED -> "events:channel:" + data.get("channelId");
-            case TEAM_MEMBER_JOINED, TEAM_MEMBER_LEFT, TEAM_DISBANDED, TEAM_MEMBER_READY ->
+            case TEAM_MEMBER_JOINED, TEAM_MEMBER_LEFT, TEAM_MEMBER_READY ->
                 "events:team:" + data.get("teamId");
+            case TEAM_CREATED, TEAM_DISBANDED ->
+                "events:global";
             case NOTIFICATION_NEW, JOIN_REQUEST_ACCEPTED, JOIN_REQUEST_REJECTED,
                  MATCH_CREATED, INVITATION_RECEIVED ->
                 "events:user:" + data.get("userId");
             case JOIN_REQUEST_CREATED -> "events:user:" + data.get("ownerId");
             case COMMUNITY_MEMBER_JOINED -> "events:community:" + data.get("communityId");
-            case TEAM_CREATED -> "events:team:" + data.get("teamId");
             default -> "events:global";
         };
     }

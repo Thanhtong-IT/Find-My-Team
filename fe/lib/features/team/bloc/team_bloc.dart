@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/events/event_bus.dart';
 import '../../../core/websocket/websocket_client.dart';
@@ -101,6 +102,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       }
       emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, clearTeam: team == null));
     } catch (e) {
+      debugPrint('[TeamBloc] _onLoadRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể tải nhóm: $e'));
     }
   }
@@ -121,6 +123,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       _wsClient.subscribeRoom(team.id, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, successMessage: 'Đã tạo nhóm!'));
     } catch (e) {
+      debugPrint('[TeamBloc] _onCreateRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể tạo nhóm: $e'));
     }
   }
@@ -147,6 +150,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       _wsClient.unsubscribeRoom(teamId, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, clearTeam: true, successMessage: 'Đã rời nhóm'));
     } catch (e) {
+      debugPrint('[TeamBloc] _onLeaveRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể rời nhóm: $e'));
     }
   }
@@ -163,6 +167,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       _wsClient.unsubscribeRoom(teamId, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, clearTeam: true, successMessage: 'Đã giải tán nhóm'));
     } catch (e) {
+      debugPrint('[TeamBloc] _onDisbandRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể giải tán: $e'));
     }
   }
@@ -193,6 +198,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
         successMessage: 'Đã chấp nhận',
       ));
     } catch (e) {
+      debugPrint('[TeamBloc] _onAcceptRequest ERROR: $e');
       emit(state.copyWith(errorMessage: 'Không thể chấp nhận: $e'));
     }
   }
@@ -212,6 +218,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
         successMessage: 'Đã từ chối',
       ));
     } catch (e) {
+      debugPrint('[TeamBloc] _onRejectRequest ERROR: $e');
       emit(state.copyWith(errorMessage: 'Không thể từ chối: $e'));
     }
   }
@@ -234,12 +241,17 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       await _teamApiService.sendJoinRequest(event.teamId, message: event.message);
       emit(state.copyWith(successMessage: 'Đã gửi yêu cầu!'));
     } catch (e) {
+      debugPrint('[TeamBloc] _onJoinRequestSent ERROR: $e');
       emit(state.copyWith(errorMessage: 'Không thể gửi yêu cầu: $e'));
     }
   }
 
   void _onMemberJoined(ev.TeamMemberJoinedEvent event, Emitter<TeamState> emit) {
     if (state.currentTeam == null) return;
+    // Prevent duplicate: skip if member already exists
+    if (state.currentTeam!.members.any((m) => m.userId == event.userId)) {
+      return;
+    }
     final updatedMembers = List<TeamMemberModel>.from(state.currentTeam!.members);
     updatedMembers.add(TeamMemberModel(
       id: '0',

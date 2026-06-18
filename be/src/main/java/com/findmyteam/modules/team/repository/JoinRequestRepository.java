@@ -18,5 +18,9 @@ public interface JoinRequestRepository extends JpaRepository<JoinRequest, UUID> 
 
     boolean existsByTeamIdAndUserId(UUID teamId, UUID userId);
 
+    Optional<JoinRequest> findByTeamIdAndUserIdAndStatus(UUID teamId, UUID userId, String status);
+
+    boolean existsByTeamIdAndUserIdAndStatus(UUID teamId, UUID userId, String status);
+
     void deleteByTeamIdAndUserId(UUID teamId, UUID userId);
 }

@@ -1,12 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/events/event_bus.dart';
 import 'game_selection_screen.dart';
 import '../../team/services/team_api_service.dart';
 import '../../team/models/team_model.dart';
 import '../../profile/models/game_model.dart';
 import '../../profile/services/user_api_service.dart';
+import '../services/explore_api_service.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -22,17 +25,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   List<GameModel> _games = [];
   List<TeamModel> _teams = [];
+  List<OnlinePlayerModel> _onlinePlayers = [];
   bool _isLoadingGames = true;
   bool _isLoadingTeams = true;
+  bool _isLoadingPlayers = true;
   GameModel? _selectedGameModel;
 
-  final List<_PlayerData> _allPlayers = [
-    _PlayerData(name: 'Lâm Gaming', playerId: '#LM2026', game: 'Liên Quân Mobile', rank: 'Cao thủ', role: 'Đi rừng', match: '98% phù hợp'),
-    _PlayerData(name: 'Khánh Pro', playerId: '#VAL100', game: 'Valorant', rank: 'Vàng', role: 'Duelist', match: '100% phù hợp'),
-    _PlayerData(name: 'Minh Gấu', playerId: '#PUBG88', game: 'PUBG Mobile', rank: 'Platinum', role: 'Support', match: '92% phù hợp'),
-    _PlayerData(name: 'Ngọc Luna', playerId: '#VAL205', game: 'Valorant', rank: 'Platinum', role: 'Controller', match: '85% phù hợp'),
-    _PlayerData(name: 'Đức Anh', playerId: '#LQ999', game: 'Liên Quân Mobile', rank: 'Tinh Anh', role: 'Xạ thủ', match: '95% phù hợp'),
-  ];
+  final ExploreApiService _exploreService = ExploreApiService();
+  StreamSubscription? _exploreTeamSub;
 
   List<String> get _gameFilters {
     return ['Tất cả game', ..._games.map((g) => g.name)];
@@ -47,13 +47,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }).toList();
   }
 
-  List<_PlayerData> get _filteredPlayers {
-    return _allPlayers.where((player) {
-      final matchGame = _selectedGame == 'Tất cả game' || player.game == _selectedGame;
+  List<OnlinePlayerModel> get _filteredPlayers {
+    return _onlinePlayers.where((player) {
+      final matchGame = _selectedGame == 'Tất cả game' || player.gameName == _selectedGame;
       final matchSearch = _searchQuery.isEmpty ||
-          player.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          player.game.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          player.playerId.toLowerCase().contains(_searchQuery.toLowerCase());
+          player.displayName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          (player.gameName?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false) ||
+          (player.username?.toLowerCase().contains(_searchQuery.toLowerCase()) ?? false);
       return matchGame && matchSearch;
     }).toList();
   }
@@ -62,6 +62,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void initState() {
     super.initState();
     _loadInitialData();
+    _listenTeamEvents();
+  }
+
+  void _listenTeamEvents() {
+    _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
+      if (!mounted) return;
+      // Reload teams khi có team mới hoặc thay đổi team
+      _loadTeams();
+    });
   }
 
   Future<void> _loadInitialData() async {
@@ -76,13 +85,38 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _games = games;
         _isLoadingGames = false;
       });
-      await _loadTeams();
+      await Future.wait([
+        _loadTeams(),
+        _loadOnlinePlayers(),
+      ]);
     } catch (e, stack) {
       debugPrint('Error loading initial data: $e\n$stack');
       if (!mounted) return;
       setState(() {
         _isLoadingGames = false;
       });
+    }
+  }
+
+  Future<void> _loadOnlinePlayers() async {
+    if (!mounted) return;
+    setState(() => _isLoadingPlayers = true);
+    try {
+      final players = await _exploreService.getOnlinePlayers();
+      if (mounted) {
+        setState(() {
+          _onlinePlayers = players;
+          _isLoadingPlayers = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading online players: $e');
+      if (mounted) {
+        setState(() {
+          _onlinePlayers = [];
+          _isLoadingPlayers = false;
+        });
+      }
     }
   }
 
@@ -176,6 +210,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _exploreTeamSub?.cancel();
     super.dispose();
   }
 
@@ -279,13 +314,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 isSmallScreen: isSmallScreen,
               ),
               const SizedBox(height: 12),
-              if (_filteredPlayers.isEmpty)
-                _EmptyState(message: 'Không có người chơi nào phù hợp', isSmallScreen: isSmallScreen)
-              else
-                ..._filteredPlayers.map((player) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _OnlinePlayerCard(player: player, isSmallScreen: isSmallScreen, onProfile: () {}, onInvite: () {}),
-                    )),
+              _isLoadingPlayers
+                  ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
+                  : _filteredPlayers.isEmpty
+                      ? _EmptyState(message: 'Không có người chơi nào phù hợp', isSmallScreen: isSmallScreen)
+                      : Column(
+                          children: _filteredPlayers
+                              .map((player) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _OnlinePlayerCardFromApi(player: player, isSmallScreen: isSmallScreen, onProfile: () {}, onInvite: () {}),
+                                  ))
+                              .toList(),
+                        ),
               const SizedBox(height: 120),
             ],
           ),
@@ -554,157 +594,6 @@ class _TeamOpenCard extends StatelessWidget {
   }
 }
 
-class _OnlinePlayerCard extends StatelessWidget {
-  final _PlayerData player;
-  final bool isSmallScreen;
-  final VoidCallback onProfile;
-  final VoidCallback onInvite;
-
-  const _OnlinePlayerCard({
-    required this.player,
-    required this.isSmallScreen,
-    required this.onProfile,
-    required this.onInvite,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-        boxShadow: [
-          BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              CircleAvatar(
-                radius: isSmallScreen ? 24 : 28,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                child: Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 24 : 28),
-              ),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  width: isSmallScreen ? 12 : 14,
-                  height: isSmallScreen ? 12 : 14,
-                  decoration: BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.white, width: 2),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Text(
-                                player.name,
-                                style: TextStyle(
-                                  fontSize: isSmallScreen ? 14 : 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 4 : 6, vertical: isSmallScreen ? 1 : 2),
-                                decoration: BoxDecoration(
-                                  color: AppColors.success.withValues(alpha: 0.1),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  player.match,
-                                  style: TextStyle(
-                                    fontSize: isSmallScreen ? 9 : 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.success,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          SizedBox(height: isSmallScreen ? 0 : 2),
-                          Text(
-                            '${player.playerId} \u2022 ${player.game}',
-                            style: TextStyle(
-                              fontSize: isSmallScreen ? 10 : 12,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: isSmallScreen ? 6 : 8),
-                Row(
-                  children: [
-                    _InfoChip(label: player.rank, icon: Icons.emoji_events_outlined, isSmallScreen: isSmallScreen),
-                    const SizedBox(width: 6),
-                    _InfoChip(label: player.role, icon: Icons.shield_outlined, isSmallScreen: isSmallScreen),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Column(
-            children: [
-              SizedBox(
-                height: isSmallScreen ? 30 : 34,
-                child: OutlinedButton(
-                  onPressed: onProfile,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
-                  ),
-                  child: Text('Hồ sơ', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
-                ),
-              ),
-              SizedBox(height: isSmallScreen ? 6 : 8),
-              SizedBox(
-                height: isSmallScreen ? 30 : 34,
-                child: ElevatedButton(
-                  onPressed: onInvite,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
-                  ),
-                  child: Text('Mời chơi', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _InfoChip extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -756,20 +645,143 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-class _PlayerData {
-  final String name;
-  final String playerId;
-  final String game;
-  final String rank;
-  final String role;
-  final String match;
+class _OnlinePlayerCardFromApi extends StatelessWidget {
+  final OnlinePlayerModel player;
+  final bool isSmallScreen;
+  final VoidCallback onProfile;
+  final VoidCallback onInvite;
 
-  _PlayerData({
-    required this.name,
-    required this.playerId,
-    required this.game,
-    required this.rank,
-    required this.role,
-    required this.match,
+  const _OnlinePlayerCardFromApi({
+    required this.player,
+    required this.isSmallScreen,
+    required this.onProfile,
+    required this.onInvite,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: isSmallScreen ? 24 : 28,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                backgroundImage: player.avatarUrl != null ? NetworkImage(player.avatarUrl!) : null,
+                child: player.avatarUrl == null ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 24 : 28) : null,
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: isSmallScreen ? 12 : 14,
+                  height: isSmallScreen ? 12 : 14,
+                  decoration: BoxDecoration(
+                    color: AppColors.success,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.white, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  player.displayName,
+                                  style: TextStyle(
+                                    fontSize: isSmallScreen ? 14 : 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: isSmallScreen ? 0 : 2),
+                          Text(
+                            '${player.username ?? ''} ${player.gameName != null ? '\u2022 ${player.gameName}' : ''}',
+                            style: TextStyle(
+                              fontSize: isSmallScreen ? 10 : 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: isSmallScreen ? 6 : 8),
+                Row(
+                  children: [
+                    if (player.rank != null) _InfoChip(label: player.rank!, icon: Icons.emoji_events_outlined, isSmallScreen: isSmallScreen),
+                    if (player.rank != null && player.role != null) const SizedBox(width: 6),
+                    if (player.role != null) _InfoChip(label: player.role!, icon: Icons.shield_outlined, isSmallScreen: isSmallScreen),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Column(
+            children: [
+              SizedBox(
+                height: isSmallScreen ? 30 : 34,
+                child: OutlinedButton(
+                  onPressed: onProfile,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
+                  ),
+                  child: Text('Hồ sơ', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              SizedBox(height: isSmallScreen ? 6 : 8),
+              SizedBox(
+                height: isSmallScreen ? 30 : 34,
+                child: ElevatedButton(
+                  onPressed: onInvite,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
+                  ),
+                  child: Text('Mời chơi', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

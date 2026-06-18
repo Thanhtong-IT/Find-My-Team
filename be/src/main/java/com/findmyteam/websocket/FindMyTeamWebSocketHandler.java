@@ -58,6 +58,9 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
         )));
 
         subscribeToUserChannel(userId, sessionId);
+        // Join global room để nhận global events (TEAM_CREATED, TEAM_DISBANDED)
+        roomManager.joinRoom("global", sessionId, userId);
+        log.info("Joined global room for user: {}", userId);
     }
 
     @Override
@@ -186,6 +189,9 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
     private void subscribeToUserChannel(String userId, String sessionId) {
         String userRoom = "user:" + userId;
         roomManager.joinRoom(userRoom, sessionId, userId);
+        // Subscribe Redis channel để nhận event riêng của user
+        eventSubscriber.subscribeToUserChannel(UUID.fromString(userId));
+        log.info("Subscribed to user channel: events:user:{}", userId);
     }
 
     private void sendMessage(WebSocketSession session, WsMessage message) {

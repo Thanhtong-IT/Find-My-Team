@@ -124,6 +124,7 @@ class UserProfileModel {
   final String id;
   final String email;
   final String username;
+  final String? fullName;
   final String? displayName;
   final String? avatarUrl;
   final String? bio;
@@ -137,6 +138,7 @@ class UserProfileModel {
     required this.id,
     required this.email,
     required this.username,
+    this.fullName,
     this.displayName,
     this.avatarUrl,
     this.bio,
@@ -155,6 +157,7 @@ class UserProfileModel {
       id: json['id']?.toString() ?? '',
       email: json['email'] as String? ?? '',
       username: json['username'] as String? ?? 'unknown',
+      fullName: json['fullName'] as String?,
       displayName: json['displayName'] as String?,
       avatarUrl: json['avatarUrl'] as String?,
       bio: json['bio'] as String?,

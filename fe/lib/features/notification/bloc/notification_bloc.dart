@@ -1,16 +1,20 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/events/event_bus.dart';
-import '../../../core/network/dio_client.dart';
-import '../../../core/constants/api_constants.dart';
+import '../../../core/websocket/websocket_client.dart';
+import '../services/notification_api_service.dart';
 import 'notification_event.dart';
 import 'notification_state.dart';
 
 class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
+  final NotificationApiService _apiService;
   StreamSubscription? _wsSub;
 
-  NotificationBloc() : super(const NotificationState()) {
+  NotificationBloc({NotificationApiService? apiService})
+      : _apiService = apiService ?? NotificationApiService(),
+        super(const NotificationState()) {
     on<NotificationLoadRequested>(_onLoadRequested);
+    on<NotificationMarkAsReadRequested>(_onMarkAsRead);
     on<NotificationMarkAllReadRequested>(_onMarkAllRead);
     on<NotificationNewReceived>(_onNewReceived);
 
@@ -19,14 +23,36 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
 
   void _listenWebSocket() {
     _wsSub = AppEventBus.instance.notificationStream.listen((event) {
-      final notif = NotificationItemModel(
-        id: event.data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-        type: event.type.name,
-        title: event.data['title'] as String? ?? 'Thông báo mới',
-        body: event.data['body'] as String? ?? '',
-        timestamp: DateTime.now(),
-        actionId: event.data['actionId']?.toString(),
-      );
+      NotificationItemModel notif;
+      if (event.type == WsEventType.joinRequestAccepted) {
+        notif = NotificationItemModel(
+          id: event.data['requestId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+          type: event.type.name,
+          title: 'Yêu cầu được chấp nhận!',
+          body: 'Bạn đã được thêm vào nhóm. Nhấn để xem nhóm.',
+          timestamp: DateTime.now(),
+          actionId: event.data['teamId']?.toString(),
+        );
+      } else if (event.type == WsEventType.joinRequestRejected) {
+        notif = NotificationItemModel(
+          id: event.data['requestId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+          type: event.type.name,
+          title: 'Yêu cầu bị từ chối',
+          body: 'Yêu cầu tham gia nhóm của bạn đã bị từ chối.',
+          timestamp: DateTime.now(),
+          actionId: null,
+        );
+      } else {
+        notif = NotificationItemModel(
+          id: event.data['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+          type: event.type.name,
+          title: event.data['title'] as String? ?? 'Thông báo mới',
+          body: event.data['body'] as String? ?? '',
+          timestamp: DateTime.now(),
+          actionId: event.data['actionId']?.toString(),
+        );
+      }
+
       add(NotificationNewReceived(notif));
     });
   }
@@ -37,11 +63,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
   ) async {
     emit(state.copyWith(status: NotificationStatus.loading));
     try {
-      final resp = await DioClient.get(ApiConstants.notifications);
-      final json = resp.data as Map<String, dynamic>;
-      if (json['success'] != true) throw Exception();
-      final list = json['data'] as List<dynamic>;
-      final notifs = list.map((e) => _fromJson(e as Map<String, dynamic>)).toList();
+      final notifs = await _apiService.getNotifications();
       final unread = notifs.where((n) => !n.isRead).length;
       emit(state.copyWith(
         status: NotificationStatus.loaded,
@@ -49,8 +71,27 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
         unreadCount: unread,
       ));
     } catch (e) {
-      emit(state.copyWith(status: NotificationStatus.error));
+      emit(state.copyWith(status: NotificationStatus.error, errorMessage: 'Không thể tải thông báo'));
     }
+  }
+
+  Future<void> _onMarkAsRead(
+    NotificationMarkAsReadRequested event,
+    Emitter<NotificationState> emit,
+  ) async {
+    try {
+      await _apiService.markAsRead(event.notificationId);
+      final updated = state.notifications.map((n) {
+        if (n.id == event.notificationId) {
+          return n.copyWith(isRead: true);
+        }
+        return n;
+      }).toList();
+      emit(state.copyWith(
+        notifications: updated,
+        unreadCount: updated.where((n) => !n.isRead).length,
+      ));
+    } catch (_) {}
   }
 
   Future<void> _onMarkAllRead(
@@ -58,20 +99,10 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     Emitter<NotificationState> emit,
   ) async {
     try {
-      await DioClient.put(ApiConstants.markAllRead);
+      await _apiService.markAllAsRead();
       emit(state.copyWith(
         unreadCount: 0,
-        notifications: state.notifications.map((n) {
-          return NotificationItemModel(
-            id: n.id,
-            type: n.type,
-            title: n.title,
-            body: n.body,
-            timestamp: n.timestamp,
-            isRead: true,
-            actionId: n.actionId,
-          );
-        }).toList(),
+        notifications: state.notifications.map((n) => n.copyWith(isRead: true)).toList(),
       ));
     } catch (_) {}
   }
@@ -84,20 +115,6 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
       notifications: [event.notif, ...state.notifications],
       unreadCount: state.unreadCount + 1,
     ));
-  }
-
-  NotificationItemModel _fromJson(Map<String, dynamic> json) {
-    return NotificationItemModel(
-      id: json['id'].toString(),
-      type: json['type'] as String? ?? 'info',
-      title: json['title'] as String? ?? 'Thông báo',
-      body: json['body'] as String? ?? '',
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'] as String)
-          : DateTime.now(),
-      isRead: json['isRead'] as bool? ?? false,
-      actionId: json['actionId']?.toString(),
-    );
   }
 
   @override

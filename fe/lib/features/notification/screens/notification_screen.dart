@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
-import '../data/notification_repository.dart';
-import '../models/notification_model.dart';
+import '../bloc/notification_bloc.dart';
+import '../bloc/notification_event.dart';
+import '../bloc/notification_state.dart';
 import '../widgets/notification_card.dart';
 
 class NotificationScreen extends StatefulWidget {
@@ -14,6 +16,12 @@ class NotificationScreen extends StatefulWidget {
 class _NotificationScreenState extends State<NotificationScreen> {
   int _selectedTabIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    context.read<NotificationBloc>().add(const NotificationLoadRequested());
+  }
+
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -24,32 +32,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  List<NotificationModel> _getFilteredNotifications() {
-    final repo = NotificationRepository();
+  List<NotificationItemModel> _getFilteredNotifications(NotificationState state) {
     switch (_selectedTabIndex) {
-      case 0: return repo.getNotifications();
-      case 1: return repo.getRequests();
-      case 2: return repo.getInfo();
+      case 0: return state.notifications;
+      case 1: return state.notifications.where((n) => n.type == 'joinRequest' || n.type == 'teamInvite').toList();
+      case 2: return state.notifications.where((n) => n.type == 'communityPost' || n.type == 'chatMessage' || n.type == 'requestAccepted' || n.type == 'requestRejected').toList();
       default: return [];
     }
-  }
-
-  void _handleAccept(NotificationModel notif) {
-    NotificationRepository().acceptRequest(notif.id);
-    _showSnackBar('Đã chấp nhận yêu cầu');
-    setState(() {});
-  }
-
-  void _handleReject(NotificationModel notif) {
-    NotificationRepository().rejectRequest(notif.id);
-    _showSnackBar('Đã từ chối yêu cầu');
-    setState(() {});
-  }
-
-  void _handleMarkAllRead() {
-    NotificationRepository().markAllAsRead();
-    _showSnackBar('Đã đánh dấu tất cả là đã đọc');
-    setState(() {});
   }
 
   @override
@@ -57,21 +46,30 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 420;
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
-      body: Column(
-        children: [
-          _buildHeader(isSmallScreen),
-          _buildTabs(isSmallScreen),
-          Expanded(
-            child: _buildNotificationList(isSmallScreen),
+    return BlocConsumer<NotificationBloc, NotificationState>(
+      listener: (context, state) {
+        if (state.errorMessage != null) {
+          _showSnackBar(state.errorMessage!, isError: true);
+        }
+      },
+      builder: (context, state) {
+        return Scaffold(
+          backgroundColor: AppColors.white,
+          body: Column(
+            children: [
+              _buildHeader(isSmallScreen, state),
+              _buildTabs(isSmallScreen),
+              Expanded(
+                child: _buildNotificationList(isSmallScreen, state),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildHeader(bool isSmallScreen) {
+  Widget _buildHeader(bool isSmallScreen, NotificationState state) {
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 8,
@@ -105,7 +103,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.done_all_rounded, color: AppColors.white),
-            onPressed: _handleMarkAllRead,
+            onPressed: () {
+              context.read<NotificationBloc>().add(const NotificationMarkAllReadRequested());
+              _showSnackBar('Đã đánh dấu tất cả là đã đọc');
+            },
           ),
         ],
       ),
@@ -147,8 +148,34 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  Widget _buildNotificationList(bool isSmallScreen) {
-    final notifications = _getFilteredNotifications();
+  Widget _buildNotificationList(bool isSmallScreen, NotificationState state) {
+    if (state.status == NotificationStatus.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (state.status == NotificationStatus.error) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: isSmallScreen ? 60 : 72, color: AppColors.error),
+            const SizedBox(height: 16),
+            Text(
+              'Không thể tải thông báo',
+              style: TextStyle(fontSize: isSmallScreen ? 15 : 17, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => context.read<NotificationBloc>().add(const NotificationLoadRequested()),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+              child: const Text('Thử lại'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final notifications = _getFilteredNotifications(state);
 
     if (notifications.isEmpty) {
       return Center(
@@ -182,12 +209,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
         return NotificationCard(
           notification: notif,
           isSmallScreen: isSmallScreen,
-          onAccept: () => _handleAccept(notif),
-          onReject: () => _handleReject(notif),
           onTap: () {
             if (!notif.isRead) {
-              NotificationRepository().markAsRead(notif.id);
-              setState(() {});
+              context.read<NotificationBloc>().add(NotificationMarkAsReadRequested(notif.id));
             }
           },
         );

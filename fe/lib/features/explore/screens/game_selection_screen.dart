@@ -1,21 +1,58 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/network/dio_client.dart';
+import '../../profile/models/game_model.dart';
 import 'create_request_screen.dart';
 
-class GameSelectionScreen extends StatelessWidget {
+class GameSelectionScreen extends StatefulWidget {
   const GameSelectionScreen({super.key});
+
+  @override
+  State<GameSelectionScreen> createState() => _GameSelectionScreenState();
+}
+
+class _GameSelectionScreenState extends State<GameSelectionScreen> {
+  List<GameModel> _games = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGames();
+  }
+
+  Future<void> _loadGames() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final resp = await DioClient.get(ApiConstants.games);
+      final json = resp.data as Map<String, dynamic>?;
+      if (json != null && json['success'] == true) {
+        final list = json['data'] as List<dynamic>?;
+        if (list != null && mounted) {
+          setState(() {
+            _games = list.map((e) => GameModel.fromJson(e as Map<String, dynamic>)).toList();
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+      if (mounted) setState(() => _isLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Không thể tải danh sách game';
+          _isLoading = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 420;
-
-    final games = [
-      _GameBanner(tag: 'FPS', title: 'Valorant', online: '1.2k đang tìm', gradient: const [Color(0xFFFD4556), Color(0xFFBD2020)]),
-      _GameBanner(tag: 'MOBA 5v5', title: 'Liên Quân Mobile', online: '3.5k đang tìm', gradient: const [Color(0xFF2563EB), Color(0xFF1D4ED8)]),
-      _GameBanner(tag: 'MOBA PC', title: 'Liên Minh Huyền Thoại', online: '3.1k đang tìm', gradient: const [Color(0xFF6D28D9), Color(0xFF4C1D95)]),
-      _GameBanner(tag: 'Battle Royale', title: 'PUBG Mobile', online: '850 đang tìm', gradient: const [Color(0xFF059669), Color(0xFF065F46)]),
-    ];
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -34,43 +71,61 @@ class GameSelectionScreen extends StatelessWidget {
         centerTitle: true,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 8),
-              const Text(
-                'Chọn tựa game bạn muốn tìm đồng đội hoặc tham gia nhóm ngay hôm nay.',
-                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 24),
-              ...games.map((game) => Padding(
-                padding: const EdgeInsets.only(bottom: 18),
-                child: _GameSelectionCard(
-                  game: game,
-                  isSmallScreen: isSmallScreen,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => CreateRequestScreen(gameName: game.title),
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null && _games.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(_error!, style: const TextStyle(color: AppColors.textSecondary)),
+                        const SizedBox(height: 16),
+                        ElevatedButton(
+                          onPressed: _loadGames,
+                          child: const Text('Thử lại'),
+                        ),
+                      ],
+                    ),
+                  )
+                : _games.isEmpty
+                    ? const Center(child: Text('Chưa có game nào', style: TextStyle(color: AppColors.textSecondary)))
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Chọn tựa game bạn muốn tìm đồng đội hoặc tham gia nhóm ngay hôm nay.',
+                              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+                            ),
+                            const SizedBox(height: 24),
+                            ..._games.map((game) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 18),
+                                  child: _GameSelectionCard(
+                                    game: game,
+                                    isSmallScreen: isSmallScreen,
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => CreateRequestScreen(gameName: game.name),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
                       ),
-                    );
-                  },
-                ),
-              )),
-              const SizedBox(height: 24),
-            ],
-          ),
-        ),
       ),
     );
   }
 }
 
 class _GameSelectionCard extends StatelessWidget {
-  final _GameBanner game;
+  final GameModel game;
   final bool isSmallScreen;
   final VoidCallback onTap;
 
@@ -79,6 +134,31 @@ class _GameSelectionCard extends StatelessWidget {
     required this.isSmallScreen,
     required this.onTap,
   });
+
+  List<Color> get _gradientColors {
+    final startHex = game.gradientStart ?? '#6D28D9';
+    final endHex = game.gradientEnd ?? '#4C1D95';
+    return [
+      _hexToColor(startHex),
+      _hexToColor(endHex),
+    ];
+  }
+
+  Color _hexToColor(String hex) {
+    hex = hex.replaceAll('#', '');
+    if (hex.length == 6) {
+      hex = 'FF$hex';
+    }
+    return Color(int.parse(hex, radix: 16));
+  }
+
+  String get _gameTag {
+    final roles = game.roles;
+    if (roles.isNotEmpty) {
+      return roles.length > 2 ? 'Multi-role' : roles.join(', ');
+    }
+    return 'Game';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -107,7 +187,7 @@ class _GameSelectionCard extends StatelessWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: game.gradient,
+                    colors: _gradientColors,
                   ),
                 ),
               ),
@@ -151,7 +231,7 @@ class _GameSelectionCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        game.tag,
+                        _gameTag,
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -161,7 +241,7 @@ class _GameSelectionCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      game.title,
+                      game.name,
                       style: TextStyle(
                         fontSize: isSmallScreen ? 20 : 22,
                         fontWeight: FontWeight.bold,
@@ -181,7 +261,7 @@ class _GameSelectionCard extends StatelessWidget {
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          game.online,
+                          '${game.roles.length} vai trò',
                           style: TextStyle(
                             fontSize: isSmallScreen ? 12 : 13,
                             color: Colors.white.withValues(alpha: 0.9),
@@ -211,7 +291,7 @@ class _GameSelectionCard extends StatelessWidget {
                   ),
                   child: Icon(
                     Icons.arrow_forward_rounded,
-                    color: game.gradient[0],
+                    color: _gradientColors[0],
                     size: isSmallScreen ? 20 : 22,
                   ),
                 ),
@@ -224,16 +304,3 @@ class _GameSelectionCard extends StatelessWidget {
   }
 }
 
-class _GameBanner {
-  final String tag;
-  final String title;
-  final String online;
-  final List<Color> gradient;
-
-  _GameBanner({
-    required this.tag,
-    required this.title,
-    required this.online,
-    required this.gradient,
-  });
-}

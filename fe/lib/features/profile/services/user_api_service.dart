@@ -55,13 +55,14 @@ class UserApiService {
     String? rank,
     String? role,
   }) async {
+    final data = <String, dynamic>{
+      'gameId': gameId,
+    };
+    if (rank != null) data['rank'] = rank;
+    if (role != null) data['role'] = role;
     final resp = await DioClient.post(
       ApiConstants.addGameProfile,
-      data: {
-        'gameId': gameId,
-        if (rank != null) 'rank': rank,
-        if (role != null) 'role': role,
-      },
+      data: data,
     );
     final json = resp.data as Map<String, dynamic>?;
     if (json == null || json['success'] != true) {
@@ -71,6 +72,17 @@ class UserApiService {
       );
     }
     return UserGameProfileModel.fromJson(json['data'] as Map<String, dynamic>? ?? {});
+  }
+
+  Future<void> deleteGameProfile(String profileId) async {
+    final resp = await DioClient.delete('${ApiConstants.addGameProfile}/$profileId');
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể xóa game profile',
+      );
+    }
   }
 }
 

@@ -46,8 +46,11 @@ class ApiConstants {
 
   // Invitation endpoints
   static const String invitations = '/invitations';
+  static const String invitationsReceived = '/invitations/received';
+  static const String invitationsSent = '/invitations/sent';
 
   // Notification endpoints
   static const String notifications = '/notifications';
+  static const String notificationsUnreadCount = '/notifications/unread-count';
   static const String markAllRead = '/notifications/read-all';
 }

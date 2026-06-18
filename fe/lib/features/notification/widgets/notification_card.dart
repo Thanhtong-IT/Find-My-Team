@@ -1,26 +1,36 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
+import '../bloc/notification_event.dart';
 import '../models/notification_model.dart';
 
 class NotificationCard extends StatelessWidget {
-  final NotificationModel notification;
+  final NotificationItemModel notification;
   final bool isSmallScreen;
-  final VoidCallback? onAccept;
-  final VoidCallback? onReject;
   final VoidCallback? onTap;
 
   const NotificationCard({
     super.key,
     required this.notification,
     required this.isSmallScreen,
-    this.onAccept,
-    this.onReject,
     this.onTap,
   });
 
+  NotificationType _getType() {
+    switch (notification.type) {
+      case 'teamInvite': return NotificationType.teamInvite;
+      case 'joinRequest': return NotificationType.joinRequest;
+      case 'communityPost': return NotificationType.communityPost;
+      case 'chatMessage': return NotificationType.chatMessage;
+      case 'requestAccepted': return NotificationType.requestAccepted;
+      case 'requestRejected': return NotificationType.requestRejected;
+      default: return NotificationType.communityPost;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final showActions = notification.type == NotificationType.joinRequest || notification.type == NotificationType.teamInvite;
+    final showActions = notification.type == 'joinRequest' || notification.type == 'teamInvite';
+    final notifType = _getType();
 
     return GestureDetector(
       onTap: onTap,
@@ -41,7 +51,7 @@ class NotificationCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildIcon(),
+                _buildIcon(notifType),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -96,7 +106,7 @@ class NotificationCard extends StatelessWidget {
                     child: SizedBox(
                       height: isSmallScreen ? 32 : 36,
                       child: ElevatedButton(
-                        onPressed: onAccept,
+                        onPressed: onTap,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.success,
                           foregroundColor: AppColors.white,
@@ -113,7 +123,7 @@ class NotificationCard extends StatelessWidget {
                     child: SizedBox(
                       height: isSmallScreen ? 32 : 36,
                       child: OutlinedButton(
-                        onPressed: onReject,
+                        onPressed: onTap,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.error,
                           side: const BorderSide(color: AppColors.error),
@@ -133,10 +143,10 @@ class NotificationCard extends StatelessWidget {
     );
   }
 
-  Widget _buildIcon() {
-    final iconData = _getIcon();
-    final bgColor = _getBgColor();
-    final fgColor = _getFgColor();
+  Widget _buildIcon(NotificationType type) {
+    final iconData = _getIcon(type);
+    final bgColor = _getBgColor(type);
+    final fgColor = _getFgColor(type);
 
     return Container(
       width: isSmallScreen ? 40 : 46,
@@ -146,8 +156,8 @@ class NotificationCard extends StatelessWidget {
     );
   }
 
-  IconData _getIcon() {
-    switch (notification.type) {
+  IconData _getIcon(NotificationType type) {
+    switch (type) {
       case NotificationType.teamInvite: return Icons.group_add_rounded;
       case NotificationType.joinRequest: return Icons.person_add_alt_1_rounded;
       case NotificationType.communityPost: return Icons.article_rounded;
@@ -157,8 +167,8 @@ class NotificationCard extends StatelessWidget {
     }
   }
 
-  Color _getBgColor() {
-    switch (notification.type) {
+  Color _getBgColor(NotificationType type) {
+    switch (type) {
       case NotificationType.teamInvite: return const Color(0xFFEFF6FF);
       case NotificationType.joinRequest: return const Color(0xFFF0FDF4);
       case NotificationType.communityPost: return const Color(0xFFFEF3C7);
@@ -168,8 +178,8 @@ class NotificationCard extends StatelessWidget {
     }
   }
 
-  Color _getFgColor() {
-    switch (notification.type) {
+  Color _getFgColor(NotificationType type) {
+    switch (type) {
       case NotificationType.teamInvite: return const Color(0xFF2563EB);
       case NotificationType.joinRequest: return const Color(0xFF16A34A);
       case NotificationType.communityPost: return const Color(0xFFD97706);

@@ -7,7 +7,7 @@ abstract class ExploreEvent extends Equatable {
 }
 
 class ExploreLoadRequested extends ExploreEvent {
-  final int? gameId;
+  final String? gameId;
   final String? query;
   const ExploreLoadRequested({this.gameId, this.query});
   @override
@@ -15,7 +15,7 @@ class ExploreLoadRequested extends ExploreEvent {
 }
 
 class ExploreSwipeRequested extends ExploreEvent {
-  final int targetUserId;
+  final String targetUserId;
   final bool liked;
   const ExploreSwipeRequested({required this.targetUserId, required this.liked});
   @override
@@ -23,7 +23,7 @@ class ExploreSwipeRequested extends ExploreEvent {
 }
 
 class ExploreMatchReceived extends ExploreEvent {
-  final int matchId;
+  final String matchId;
   final String otherUserName;
   const ExploreMatchReceived({required this.matchId, required this.otherUserName});
   @override

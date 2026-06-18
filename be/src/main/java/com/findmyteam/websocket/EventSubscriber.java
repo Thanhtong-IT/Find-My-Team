@@ -33,29 +33,30 @@ public class EventSubscriber implements MessageListener {
     @PostConstruct
     public void init() {
         subscribeToChannel("events:global");
+        log.info("EventSubscriber initialized, subscribed to events:global");
     }
 
     public void subscribeToChannel(String channel) {
         listenerContainer.addMessageListener(this, new ChannelTopic(channel));
-        log.debug("Subscribed to Redis channel: {}", channel);
+        log.info("Redis listener added for channel: {}", channel);
     }
 
     public void subscribeToUserChannel(UUID userId) {
         String channel = "events:user:" + userId;
         listenerContainer.addMessageListener(this, new ChannelTopic(channel));
-        log.debug("Subscribed to user channel: {}", channel);
+        log.info("Redis listener added for events:user:{}", userId);
     }
 
     public void subscribeToTeamChannel(UUID teamId) {
         String channel = "events:team:" + teamId;
         listenerContainer.addMessageListener(this, new ChannelTopic(channel));
-        log.debug("Subscribed to team channel: {}", channel);
+        log.info("Redis listener added for events:team:{}", teamId);
     }
 
     public void subscribeToChannelChannel(UUID channelId) {
         String channel = "events:channel:" + channelId;
         listenerContainer.addMessageListener(this, new ChannelTopic(channel));
-        log.debug("Subscribed to channel events channel: {}", channel);
+        log.info("Redis listener added for events:channel:{}", channelId);
     }
 
     @Override
@@ -64,11 +65,14 @@ public class EventSubscriber implements MessageListener {
             String channel = new String(message.getChannel());
             String payload = new String(message.getBody());
 
-            log.debug("Received Redis message on channel {}: {}", channel, payload);
+            log.info("=== Redis message received ===");
+            log.info("Raw channel: {}", channel);
 
             Map<String, Object> eventData = objectMapper.readValue(payload, Map.class);
             String eventType = (String) eventData.get("type");
             Map<String, Object> data = (Map<String, Object>) eventData.get("data");
+
+            log.info("EventType: {}, data keys: {}", eventType, data != null ? data.keySet() : "null");
 
             handleEvent(channel, eventType, data);
 
@@ -78,30 +82,30 @@ public class EventSubscriber implements MessageListener {
     }
 
     private void handleEvent(String channel, String eventType, Map<String, Object> data) {
-        if (channel.startsWith("events:user:")) {
+        Map<String, Object> payload = Map.of(
+            "type", eventType,
+            "data", data
+        );
+
+        if (channel.equals("events:global")) {
+            log.info("Broadcasting {} to global room", eventType);
+            webSocketHandler.broadcastToRoom("global", payload);
+        } else if (channel.startsWith("events:user:")) {
             String userId = channel.substring("events:user:".length());
-            webSocketHandler.broadcastToRoom("user:" + userId, Map.of(
-                "type", eventType,
-                "data", data
-            ));
+            log.info("Broadcasting {} to user room: user:{}", eventType, userId);
+            webSocketHandler.broadcastToRoom("user:" + userId, payload);
         } else if (channel.startsWith("events:team:")) {
             String teamId = channel.substring("events:team:".length());
-            webSocketHandler.broadcastToRoom("room:team:" + teamId, Map.of(
-                "type", eventType,
-                "data", data
-            ));
+            log.info("Broadcasting {} to team room: room:team:{}", eventType, teamId);
+            webSocketHandler.broadcastToRoom("room:team:" + teamId, payload);
         } else if (channel.startsWith("events:channel:")) {
             String channelId = channel.substring("events:channel:".length());
-            webSocketHandler.broadcastToRoom("room:channel:" + channelId, Map.of(
-                "type", eventType,
-                "data", data
-            ));
+            log.info("Broadcasting {} to channel room: room:channel:{}", eventType, channelId);
+            webSocketHandler.broadcastToRoom("room:channel:" + channelId, payload);
         } else if (channel.startsWith("events:community:")) {
             String communityId = channel.substring("events:community:".length());
-            webSocketHandler.broadcastToRoom("room:community:" + communityId, Map.of(
-                "type", eventType,
-                "data", data
-            ));
+            log.info("Broadcasting {} to community room: room:community:{}", eventType, communityId);
+            webSocketHandler.broadcastToRoom("room:community:" + communityId, payload);
         } else {
             log.warn("Unknown channel pattern: {}", channel);
         }

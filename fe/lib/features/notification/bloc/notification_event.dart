@@ -10,6 +10,13 @@ class NotificationLoadRequested extends NotificationEvent {
   const NotificationLoadRequested();
 }
 
+class NotificationMarkAsReadRequested extends NotificationEvent {
+  final String notificationId;
+  const NotificationMarkAsReadRequested(this.notificationId);
+  @override
+  List<Object?> get props => [notificationId];
+}
+
 class NotificationMarkAllReadRequested extends NotificationEvent {
   const NotificationMarkAllReadRequested();
 }
@@ -39,4 +46,16 @@ class NotificationItemModel {
     this.isRead = false,
     this.actionId,
   });
+
+  NotificationItemModel copyWith({bool? isRead}) {
+    return NotificationItemModel(
+      id: id,
+      type: type,
+      title: title,
+      body: body,
+      timestamp: timestamp,
+      isRead: isRead ?? this.isRead,
+      actionId: actionId,
+    );
+  }
 }

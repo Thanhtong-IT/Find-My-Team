@@ -26,13 +26,19 @@ class AppEventBus {
 
   Stream<WsIncomingEvent> get notificationStream => stream.where((e) =>
       e.type == WsEventType.notificationNew ||
-      e.type == WsEventType.invitationReceived);
+      e.type == WsEventType.invitationReceived ||
+      e.type == WsEventType.joinRequestAccepted ||
+      e.type == WsEventType.joinRequestRejected);
 
   Stream<WsIncomingEvent> get matchStream =>
       stream.where((e) => e.type == WsEventType.matchCreated);
 
   Stream<WsIncomingEvent> get presenceStream => stream.where((e) =>
       e.type == WsEventType.userOnline || e.type == WsEventType.userOffline);
+
+  Stream<WsIncomingEvent> get exploreTeamStream => stream.where((e) =>
+      e.type == WsEventType.teamCreated ||
+      e.type == WsEventType.teamDisbanded);
 
   Stream<WsIncomingEvent> get typingStream => stream.where((e) =>
       e.type == WsEventType.typingStart || e.type == WsEventType.typingStop);

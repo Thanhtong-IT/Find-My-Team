@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 
 class OnlinePlayer {
-  final int id;
+  final String id;
   final String displayName;
   final String? avatarUrl;
   final String gameName;
@@ -21,7 +21,7 @@ class OnlinePlayer {
 
   factory OnlinePlayer.fromJson(Map<String, dynamic> json) {
     return OnlinePlayer(
-      id: json['id'] as int,
+      id: json['id']?.toString() ?? '',
       displayName: json['displayName'] as String? ?? 'Unknown',
       avatarUrl: json['avatarUrl'] as String?,
       gameName: json['gameName'] as String? ?? '',
@@ -33,8 +33,8 @@ class OnlinePlayer {
 }
 
 class MatchModel {
-  final int id;
-  final int matchedUserId;
+  final String id;
+  final String matchedUserId;
   final String matchedUserName;
   final String? matchedUserAvatar;
   final DateTime matchedAt;
@@ -49,8 +49,8 @@ class MatchModel {
 
   factory MatchModel.fromJson(Map<String, dynamic> json) {
     return MatchModel(
-      id: json['id'] as int,
-      matchedUserId: json['matchedUserId'] as int,
+      id: json['id']?.toString() ?? '',
+      matchedUserId: json['matchedUserId']?.toString() ?? '',
       matchedUserName: json['matchedUserName'] as String? ?? 'Unknown',
       matchedUserAvatar: json['matchedUserAvatar'] as String?,
       matchedAt: json['matchedAt'] != null
@@ -66,7 +66,7 @@ class ExploreState extends Equatable {
   final ExploreStatus status;
   final List<OnlinePlayer> onlinePlayers;
   final List<MatchModel> matches;
-  final int? selectedGameId;
+  final String? selectedGameId;
   final String? query;
   final MatchModel? newMatch;
   final String? errorMessage;
@@ -85,7 +85,7 @@ class ExploreState extends Equatable {
     ExploreStatus? status,
     List<OnlinePlayer>? onlinePlayers,
     List<MatchModel>? matches,
-    int? selectedGameId,
+    String? selectedGameId,
     String? query,
     MatchModel? newMatch,
     String? errorMessage,

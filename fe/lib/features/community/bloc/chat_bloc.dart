@@ -38,16 +38,16 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     emit(state.copyWith(status: ChatStatus.loading));
     try {
-      final result = await _chatApiService.getMessages(
+      final messages = await _chatApiService.getMessages(
         communityId: event.communityId,
         channelId: event.channelId,
         page: event.refresh ? 0 : 0,
       );
       emit(state.copyWith(
         status: ChatStatus.loaded,
-        messages: result.content,
-        hasMore: !result.last,
-        currentPage: result.page,
+        messages: messages,
+        hasMore: false,
+        currentPage: 0,
       ));
     } catch (e) {
       emit(state.copyWith(
@@ -209,14 +209,14 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   ) async {
     if (!state.hasMore) return;
     try {
-      final result = await _chatApiService.getMessages(
+      final messages = await _chatApiService.getMessages(
         communityId: event.communityId,
         channelId: event.channelId,
         page: state.currentPage + 1,
       );
       emit(state.copyWith(
-        messages: [...result.content, ...state.messages],
-        hasMore: !result.last,
+        messages: [...messages, ...state.messages],
+        hasMore: false,
         currentPage: state.currentPage + 1,
       ));
     } catch (_) {}

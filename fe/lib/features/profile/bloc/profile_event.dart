@@ -32,6 +32,15 @@ class GameProfileAddRequested extends ProfileEvent {
   List<Object?> get props => [gameId, rank, role];
 }
 
+class GameProfileDeleteRequested extends ProfileEvent {
+  final String profileId;
+
+  const GameProfileDeleteRequested({required this.profileId});
+
+  @override
+  List<Object?> get props => [profileId];
+}
+
 class PopularGamesLoadRequested extends ProfileEvent {
   const PopularGamesLoadRequested();
 }

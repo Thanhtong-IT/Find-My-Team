@@ -5,6 +5,9 @@ import 'login_screen.dart';
 import '../../main/screens/main_navigation_screen.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
+import '../../profile/bloc/profile_bloc.dart';
+import '../../profile/bloc/profile_event.dart';
+import '../../profile/bloc/profile_state.dart';
 
 class SetupProfileScreen extends StatefulWidget {
   const SetupProfileScreen({super.key});
@@ -22,6 +25,8 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> {
   String? _selectedRole;
   String? _selectedRegion;
 
+  bool _isLoading = false;
+
   final List<String> _games = ['Liên Quân Mobile', 'Liên Minh Huyền Thoại', 'Valorant', 'PUBG Mobile', 'Free Fire', 'Genshin Impact'];
   final List<String> _ranks = ['Chưa xếp hạng', 'Đồng', 'Bạc', 'Vàng', 'Bạch kim', 'Kim cương', 'Cao thủ', 'Thách đấu'];
   final List<String> _roles = ['Đội trưởng', 'Người chơi', 'Hỗ trợ', 'Xạ thủ', 'Đấu sĩ', 'Pháp sư', 'Sát thủ', 'Đỡ đòn'];
@@ -34,12 +39,20 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> {
     super.dispose();
   }
 
-  void _handleComplete() {
+  Future<void> _handleComplete() async {
     if (_displayNameController.text.trim().isEmpty) {
       _showSnackBar('Vui lòng nhập tên hiển thị');
       return;
     }
-    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationScreen()));
+
+    setState(() => _isLoading = true);
+
+    // Gọi API update profile
+    context.read<ProfileBloc>().add(ProfileUpdateRequested(
+      displayName: _displayNameController.text.trim(),
+      bio: _bioController.text.trim(),
+      region: _selectedRegion,
+    ));
   }
 
   void _handleSkip() {
@@ -55,41 +68,61 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> {
     );
   }
 
-  void _showSnackBar(String message) {
+  void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
+  }
+
+  void _navigateToMain() {
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const MainNavigationScreen()));
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [AppColors.white, Color(0xFFEFF6FF)]),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingL),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const SizedBox(height: AppSizes.paddingL),
-                      _buildAvatarSection(),
-                      const SizedBox(height: AppSizes.paddingXL),
-                      _buildFormCard(),
-                      const SizedBox(height: AppSizes.paddingXL),
-                      _buildActionButtons(),
-                      const SizedBox(height: AppSizes.paddingXL),
-                    ],
+    return BlocListener<ProfileBloc, ProfileState>(
+      listener: (context, state) {
+        if (state.status == ProfileStatus.error) {
+          setState(() => _isLoading = false);
+          _showSnackBar(state.errorMessage ?? 'Có lỗi xảy ra', isError: true);
+        }
+        if (state.status == ProfileStatus.success && _isLoading) {
+          setState(() => _isLoading = false);
+          _navigateToMain();
+        }
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [AppColors.white, Color(0xFFEFF6FF)]),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildHeader(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingL),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: AppSizes.paddingL),
+                        _buildAvatarSection(),
+                        const SizedBox(height: AppSizes.paddingXL),
+                        _buildFormCard(),
+                        const SizedBox(height: AppSizes.paddingXL),
+                        _buildActionButtons(),
+                        const SizedBox(height: AppSizes.paddingXL),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -260,13 +293,32 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> {
         SizedBox(
           height: AppSizes.buttonHeightL,
           child: ElevatedButton(
-            onPressed: _handleComplete,
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: AppColors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusL))),
-            child: const Text('HOÀN TẤT', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+            onPressed: _isLoading ? null : _handleComplete,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSizes.radiusL)),
+              disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.6),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.white),
+                    ),
+                  )
+                : const Text('HOÀN TẤT', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.8)),
           ),
         ),
         const SizedBox(height: AppSizes.paddingM),
-        TextButton(onPressed: _handleSkip, style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary, padding: const EdgeInsets.symmetric(vertical: AppSizes.paddingS)), child: const Text('Bỏ qua', style: TextStyle(fontSize: 14))),
+        TextButton(
+          onPressed: _isLoading ? null : _handleSkip,
+          style: TextButton.styleFrom(foregroundColor: AppColors.textSecondary, padding: const EdgeInsets.symmetric(vertical: AppSizes.paddingS)),
+          child: const Text('Bỏ qua', style: TextStyle(fontSize: 14)),
+        ),
       ],
     );
   }

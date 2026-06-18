@@ -11,15 +11,16 @@ class TeamApiService {
     String? description,
     String? requiredRank,
   }) async {
+    final data = <String, dynamic>{
+      'name': name,
+      'gameId': gameId,
+      'maxSize': maxMembers,
+    };
+    if (description != null) data['description'] = description;
+    if (requiredRank != null) data['requiredRank'] = requiredRank;
     final resp = await DioClient.post(
       ApiConstants.teams,
-      data: {
-        'name': name,
-        'gameId': gameId,
-        'maxSize': maxMembers,
-        if (description != null) 'description': description,
-        if (requiredRank != null) 'requiredRank': requiredRank,
-      },
+      data: data,
     );
     final json = resp.data as Map<String, dynamic>;
     if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions, message: json['message'] as String?);

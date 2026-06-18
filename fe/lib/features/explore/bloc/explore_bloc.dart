@@ -34,7 +34,7 @@ class ExploreBloc extends Bloc<ExploreEvent, ExploreState> {
     emit(state.copyWith(status: ExploreStatus.loading));
     try {
       final params = <String, dynamic>{};
-      if (event.gameId != null) params['game'] = event.gameId;
+      if (event.gameId != null) params['gameId'] = event.gameId;
       if (event.query != null && event.query!.isNotEmpty) params['q'] = event.query;
 
       final resp = await DioClient.get(ApiConstants.onlinePlayers, queryParameters: params);
@@ -81,7 +81,7 @@ class ExploreBloc extends Bloc<ExploreEvent, ExploreState> {
   ) {
     emit(state.copyWith(newMatch: MatchModel(
       id: event.matchId,
-      matchedUserId: 0,
+      matchedUserId: '', // filled from WebSocket event
       matchedUserName: event.otherUserName,
       matchedAt: DateTime.now(),
     )));
