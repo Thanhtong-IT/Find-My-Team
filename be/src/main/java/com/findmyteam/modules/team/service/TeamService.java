@@ -407,7 +407,7 @@ public class TeamService {
             throw new BusinessException("Chỉ chủ nhóm mới có thể chấp nhận yêu cầu");
         }
 
-        int currentSize = teamMemberRepository.countByTeamId(team.getId());
+        int currentSize = teamMemberRepository.countActiveMembersByTeamId(team.getId());
         if (currentSize >= team.getMaxSize()) {
             throw new BusinessException("Nhóm đã đủ thành viên");
         }
@@ -464,13 +464,24 @@ public class TeamService {
         joinRequest.setStatus("accepted");
         joinRequestRepository.save(joinRequest);
 
-        TeamMember member = new TeamMember();
-        member.setTeamId(team.getId());
-        member.setUserId(joinRequest.getUserId());
+        Optional<TeamMember> existingMember = teamMemberRepository.findByTeamIdAndUserId(team.getId(), joinRequest.getUserId());
+        TeamMember member;
+        if (existingMember.isPresent()) {
+            member = existingMember.get();
+            member.setStatus(TeamMember.STATUS_ACTIVE);
+            member.setLeftAt(null);
+            member.setReady(false);
+        } else {
+            member = new TeamMember();
+            member.setTeamId(team.getId());
+            member.setUserId(joinRequest.getUserId());
+            member.setStatus(TeamMember.STATUS_ACTIVE);
+            member.setReady(false);
+        }
         member.setRole("member");
         teamMemberRepository.save(member);
 
-        int newCount = teamMemberRepository.countByTeamId(team.getId());
+        int newCount = teamMemberRepository.countActiveMembersByTeamId(team.getId());
         if (newCount >= team.getMaxSize()) {
             team.setStatus("full");
             teamRepository.save(team);

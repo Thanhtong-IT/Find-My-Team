@@ -21,14 +21,14 @@ public interface TeamRepository extends JpaRepository<Team, UUID> {
     @Query("""
         SELECT t FROM Team t
         JOIN TeamMember tm ON tm.teamId = t.id
-        WHERE tm.userId = :userId AND t.status != 'disbanded'
+        WHERE tm.userId = :userId AND tm.status = 'ACTIVE' AND t.status != 'disbanded'
         """)
     Optional<Team> findActiveTeamByUserId(UUID userId);
 
     @Query("""
         SELECT t FROM Team t
         JOIN TeamMember tm ON tm.teamId = t.id
-        WHERE tm.userId = :userId AND t.status = 'recruiting'
+        WHERE tm.userId = :userId AND tm.status = 'ACTIVE' AND t.status = 'recruiting'
         """)
     Optional<Team> findRecruitingTeamByUserId(UUID userId);
 

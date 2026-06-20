@@ -220,6 +220,7 @@ class _TeamScreenState extends State<TeamScreen> {
       // Chỉ cho phép mời người chơi nếu mình là leader
       if (!isLeader) return null;
       return FloatingActionButton.extended(
+        heroTag: 'team_invite_member_fab',
         onPressed: () => _navigateToInviteMember(currentTeam!),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.white,
@@ -230,6 +231,7 @@ class _TeamScreenState extends State<TeamScreen> {
     }
     if (_selectedTabIndex == 2) {
       return FloatingActionButton.extended(
+        heroTag: 'team_create_community_fab',
         onPressed: () async {
           final result = await Navigator.push<bool>(
             context,

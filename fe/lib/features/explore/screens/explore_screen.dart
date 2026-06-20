@@ -407,6 +407,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       floatingActionButton: _isSearchMode
           ? null
           : FloatingActionButton.extended(
+              heroTag: 'explore_create_request_fab',
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GameSelectionScreen())),
               backgroundColor: AppColors.primary,
               foregroundColor: AppColors.white,

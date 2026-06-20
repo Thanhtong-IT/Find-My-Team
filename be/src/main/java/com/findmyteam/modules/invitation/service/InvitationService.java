@@ -15,6 +15,8 @@ import com.findmyteam.modules.team.entity.TeamMember;
 import com.findmyteam.modules.team.repository.TeamMemberRepository;
 import com.findmyteam.modules.team.repository.TeamRepository;
 import com.findmyteam.modules.auth.repository.UserRepository;
+import com.findmyteam.websocket.EventSubscriber;
+import com.findmyteam.websocket.PresenceService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -37,19 +39,25 @@ public class InvitationService {
     private final UserRepository userRepository;
     private final EventPublisher eventPublisher;
     private final NotificationService notificationService;
+    private final PresenceService presenceService;
+    private final EventSubscriber eventSubscriber;
 
     public InvitationService(InvitationRepository invitationRepository,
                            TeamRepository teamRepository,
                            TeamMemberRepository teamMemberRepository,
                            UserRepository userRepository,
                            EventPublisher eventPublisher,
-                           NotificationService notificationService) {
+                           NotificationService notificationService,
+                           PresenceService presenceService,
+                           EventSubscriber eventSubscriber) {
         this.invitationRepository = invitationRepository;
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
         this.notificationService = notificationService;
+        this.presenceService = presenceService;
+        this.eventSubscriber = eventSubscriber;
     }
 
     @Transactional
@@ -183,7 +191,7 @@ public class InvitationService {
             }
 
             // Check if team is full
-            int currentSize = teamMemberRepository.countByTeamId(team.getId());
+            int currentSize = teamMemberRepository.countActiveMembersByTeamId(team.getId());
             if (currentSize >= team.getMaxSize()) {
                 throw new BusinessException("Nhóm đã đủ thành viên");
             }
@@ -216,9 +224,18 @@ public class InvitationService {
                 member.setStatus(TeamMember.STATUS_ACTIVE);
                 member.setReady(false);
                 member = teamMemberRepository.save(member);
-                log.info("acceptInvitation: TeamMember created id={}, teamId={}, userId={}", 
+                log.info("acceptInvitation: TeamMember created id={}, teamId={}, userId={}",
                     member.getId(), member.getTeamId(), member.getUserId());
             }
+
+            int newCount = teamMemberRepository.countActiveMembersByTeamId(team.getId());
+            if (newCount >= team.getMaxSize()) {
+                team.setStatus("full");
+                teamRepository.save(team);
+            }
+
+            presenceService.joinTeamRoom(userId, team.getId());
+            eventSubscriber.subscribeToTeamChannel(team.getId());
 
             // Get inviter display name for event
             String inviterName = "Người dùng";
