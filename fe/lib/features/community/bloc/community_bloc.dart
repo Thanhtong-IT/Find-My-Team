@@ -18,6 +18,7 @@ class CommunityBloc extends Bloc<CommunityEvent, CommunityState> {
     on<CommunityJoinRequested>(_onJoinRequested);
     on<CommunityLeaveRequested>(_onLeaveRequested);
     on<CommunityChannelsLoadRequested>(_onChannelsLoadRequested);
+    on<CommunityChannelCreateRequested>(_onChannelCreateRequested);
   }
 
   Future<void> _onLoadRequested(
@@ -110,6 +111,30 @@ class CommunityBloc extends Bloc<CommunityEvent, CommunityState> {
       emit(state.copyWith(channels: channels));
     } catch (e) {
       emit(state.copyWith(errorMessage: 'Không thể tải danh sách kênh'));
+    }
+  }
+
+  Future<void> _onChannelCreateRequested(
+    CommunityChannelCreateRequested event,
+    Emitter<CommunityState> emit,
+  ) async {
+    emit(state.copyWith(channelCreating: true));
+    try {
+      final channel = await _apiService.createChannel(
+        communityId: event.communityId,
+        name: event.name,
+        type: event.type,
+      );
+      emit(state.copyWith(
+        channelCreating: false,
+        channels: [...state.channels, channel],
+        successMessage: 'Đã tạo kênh #${channel.name}',
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        channelCreating: false,
+        errorMessage: 'Không thể tạo kênh',
+      ));
     }
   }
 }

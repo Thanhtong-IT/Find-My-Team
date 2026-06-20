@@ -2,26 +2,29 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
 import '../models/community_model.dart';
 import '../models/channel_model.dart';
-import '../data/community_repository.dart';
-import 'create_channel_dialog.dart';
 
 class CommunityChannelDrawer extends StatelessWidget {
   final CommunityModel community;
   final ChannelModel? selectedChannel;
+  final List<ChannelModel> channels;
+  final bool isLoading;
   final void Function(ChannelModel) onChannelSelected;
+  final void Function(ChannelType type) onCreateChannelPressed;
 
   const CommunityChannelDrawer({
     super.key,
     required this.community,
     required this.selectedChannel,
+    required this.channels,
+    required this.isLoading,
     required this.onChannelSelected,
+    required this.onCreateChannelPressed,
   });
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 420;
-    final channels = CommunityRepository().getChannels(community.id);
     final textChannels = channels.where((c) => c.type == ChannelType.text).toList();
     final voiceChannels = channels.where((c) => c.type == ChannelType.voice).toList();
 
@@ -32,18 +35,20 @@ class CommunityChannelDrawer extends StatelessWidget {
         children: [
           _buildHeader(context, isSmallScreen),
           Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 12 : 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildChannelSection(context, 'Kênh chat', Icons.tag_rounded, textChannels, ChannelType.text, isSmallScreen),
-                  SizedBox(height: isSmallScreen ? 12 : 16),
-                  _buildChannelSection(context, 'Kênh voice', Icons.volume_up_rounded, voiceChannels, ChannelType.voice, isSmallScreen),
-                  SizedBox(height: isSmallScreen ? 12 : 16),
-                ],
-              ),
-            ),
+            child: isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 12 : 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildChannelSection(context, 'Kênh chat', Icons.tag_rounded, textChannels, ChannelType.text, isSmallScreen),
+                        SizedBox(height: isSmallScreen ? 12 : 16),
+                        _buildChannelSection(context, 'Kênh voice', Icons.volume_up_rounded, voiceChannels, ChannelType.voice, isSmallScreen),
+                        SizedBox(height: isSmallScreen ? 12 : 16),
+                      ],
+                    ),
+                  ),
           ),
         ],
       ),
@@ -193,59 +198,91 @@ class CommunityChannelDrawer extends StatelessWidget {
 
   Widget _buildChannelItem(BuildContext context, ChannelModel channel, bool isSmallScreen) {
     final isSelected = selectedChannel?.id == channel.id;
-    return GestureDetector(
-      onTap: () {
-        onChannelSelected(channel);
-        Navigator.pop(context);
-      },
-      child: Container(
-        padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 16, vertical: isSmallScreen ? 7 : 9),
-        color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : Colors.transparent,
-        child: Row(
-          children: [
-            if (channel.type == ChannelType.text)
-              Text('#', style: TextStyle(fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.w500, color: isSelected ? AppColors.primary : AppColors.textSecondary))
-            else
-              Icon(Icons.volume_up_rounded, size: isSmallScreen ? 16 : 18, color: isSelected ? AppColors.primary : AppColors.textSecondary),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                channel.name,
-                style: TextStyle(
-                  fontSize: isSmallScreen ? 13 : 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                  color: isSelected ? AppColors.primary : AppColors.textPrimary,
+
+    // Text channel - clickable
+    if (channel.type == ChannelType.text) {
+      return GestureDetector(
+        onTap: () {
+          onChannelSelected(channel);
+          Navigator.pop(context);
+        },
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 16, vertical: isSmallScreen ? 7 : 9),
+          color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+          child: Row(
+            children: [
+              Text('#', style: TextStyle(fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.w500, color: isSelected ? AppColors.primary : AppColors.textSecondary)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  channel.name,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 13 : 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Voice channel - Discord style with speaker icon
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 16, vertical: isSmallScreen ? 6 : 8),
+      color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+      child: Row(
+        children: [
+          Icon(Icons.volume_up_rounded, size: isSmallScreen ? 16 : 18, color: isSelected ? AppColors.primary : AppColors.textSecondary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              channel.name,
+              style: TextStyle(
+                fontSize: isSmallScreen ? 13 : 14,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? AppColors.primary : AppColors.textPrimary,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (channel.onlineCount > 0)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.person, size: 10, color: AppColors.success),
+                  const SizedBox(width: 2),
+                  Text('${channel.onlineCount}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.success)),
+                ],
               ),
             ),
-            if (channel.type == ChannelType.voice && channel.onlineCount > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(4)),
-                child: Text('${channel.onlineCount}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.success)),
-              ),
-          ],
-        ),
+          const SizedBox(width: 8),
+          IconButton(
+            onPressed: () {
+              // TODO: Voice connection logic
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Voice channel: ${channel.name}'), behavior: SnackBarBehavior.floating),
+              );
+            },
+            icon: Icon(Icons.volume_off_rounded, size: isSmallScreen ? 18 : 20, color: AppColors.textSecondary),
+            tooltip: 'Voice',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+          ),
+        ],
       ),
     );
   }
 
   void _showCreateChannelDialog(BuildContext context, ChannelType type) {
-    showDialog(
-      context: context,
-      builder: (ctx) => CreateChannelDialog(
-        initialType: type,
-        onSubmit: (name, submittedType) {
-          CommunityRepository().createChannel(
-            communityId: community.id,
-            name: name,
-            type: submittedType,
-          );
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đã tạo kênh #$name'), behavior: SnackBarBehavior.floating, backgroundColor: AppColors.primary));
-        },
-      ),
-    );
+    onCreateChannelPressed(type);
   }
 }

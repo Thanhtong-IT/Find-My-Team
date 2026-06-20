@@ -15,10 +15,22 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, UUID> {
     @Query("SELECT tm FROM TeamMember tm JOIN FETCH tm.user WHERE tm.teamId = :teamId")
     List<TeamMember> findByTeamId(UUID teamId);
 
+    @Query("SELECT tm FROM TeamMember tm JOIN FETCH tm.user WHERE tm.teamId = :teamId AND tm.status = 'ACTIVE'")
+    List<TeamMember> findActiveMembersByTeamId(UUID teamId);
+
     Optional<TeamMember> findByTeamIdAndUserId(UUID teamId, UUID userId);
+
+    @Query("SELECT tm FROM TeamMember tm WHERE tm.teamId = :teamId AND tm.userId = :userId AND tm.status = 'ACTIVE'")
+    Optional<TeamMember> findActiveMemberByTeamIdAndUserId(UUID teamId, UUID userId);
+
+    @Query("SELECT tm FROM TeamMember tm WHERE tm.userId = :userId")
+    List<TeamMember> findByUserId(UUID userId);
 
     @Query("SELECT COUNT(tm) FROM TeamMember tm WHERE tm.teamId = :teamId")
     int countByTeamId(UUID teamId);
+
+    @Query("SELECT COUNT(tm) FROM TeamMember tm WHERE tm.teamId = :teamId AND tm.status = 'ACTIVE'")
+    int countActiveMembersByTeamId(UUID teamId);
 
     boolean existsByTeamIdAndUserId(UUID teamId, UUID userId);
 

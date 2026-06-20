@@ -49,15 +49,57 @@ class NotificationApiService {
     }
   }
 
+  Future<void> acceptInvitation(String invitationId) async {
+    final resp = await DioClient.post('${ApiConstants.invitations}/$invitationId/accept');
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể chấp nhận lời mời',
+      );
+    }
+  }
+
+  Future<void> rejectInvitation(String invitationId) async {
+    final resp = await DioClient.post('${ApiConstants.invitations}/$invitationId/reject');
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể từ chối lời mời',
+      );
+    }
+  }
+
   NotificationItemModel _fromJson(Map<String, dynamic> json) {
+    // DEBUG LOG
+    print('[NOTIFICATION_DEBUG] Parsing notification: $json');
+
+    // Check for null id
+    final idRaw = json['id'];
+    if (idRaw == null) {
+      print('[NOTIFICATION_DEBUG] ERROR: id is null in notification json');
+      throw Exception('Notification id is null');
+    }
+
+    // Check for timestamp field name - backend uses 'createdAt'
+    DateTime timestamp;
+    if (json['timestamp'] != null) {
+      timestamp = DateTime.parse(json['timestamp'] as String);
+    } else if (json['createdAt'] != null) {
+      timestamp = DateTime.parse(json['createdAt'] as String);
+      print('[NOTIFICATION_DEBUG] NOTE: using createdAt instead of timestamp');
+    } else {
+      print('[NOTIFICATION_DEBUG] NOTE: no timestamp field found, using now');
+      timestamp = DateTime.now();
+    }
+
     return NotificationItemModel(
-      id: json['id'].toString(),
+      id: idRaw.toString(),
       type: json['type'] as String? ?? 'info',
       title: json['title'] as String? ?? 'Thông báo',
       body: json['body'] as String? ?? '',
-      timestamp: json['timestamp'] != null
-          ? DateTime.parse(json['timestamp'] as String)
-          : DateTime.now(),
+      timestamp: timestamp,
       isRead: json['isRead'] as bool? ?? false,
       actionId: json['actionId']?.toString(),
     );

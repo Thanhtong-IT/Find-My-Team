@@ -5,6 +5,8 @@ import '../bloc/community_bloc.dart';
 import '../bloc/community_event.dart';
 import '../bloc/community_state.dart';
 import 'create_community_screen.dart';
+import '../../profile/bloc/profile_bloc.dart';
+import '../../profile/bloc/profile_event.dart';
 
 class CommunityScreen extends StatelessWidget {
   const CommunityScreen({super.key});
@@ -30,7 +32,16 @@ class _CommunityScreenBody extends StatelessWidget {
         elevation: 0,
         actions: [
           IconButton(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateCommunityScreen())),
+            onPressed: () async {
+              final result = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const CreateCommunityScreen()),
+              );
+              // Reload profile when returning from create community
+              if (result == true && context.mounted) {
+                context.read<ProfileBloc>().add(const ProfileLoadRequested());
+              }
+            },
             icon: const Icon(Icons.add_rounded, color: AppColors.primary),
           ),
         ],

@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/events/event_bus.dart';
 import '../../community/screens/community_chat_screen.dart';
 import '../../community/screens/create_community_screen.dart';
 import '../../community/data/community_repository.dart';
@@ -13,6 +15,9 @@ import '../models/team_model.dart';
 import '../../profile/models/game_model.dart';
 import '../../profile/services/user_api_service.dart';
 import '../../profile/bloc/profile_bloc.dart';
+import '../../profile/bloc/profile_event.dart';
+import '../../profile/screens/user_profile_screen.dart';
+import 'invite_member_screen.dart';
 
 class TeamScreen extends StatefulWidget {
   const TeamScreen({super.key});
@@ -23,14 +28,42 @@ class TeamScreen extends StatefulWidget {
 
 class _TeamScreenState extends State<TeamScreen> {
   int _selectedTabIndex = 1;
-
-  List<CommunityModel> get _communities => CommunityRepository().getCommunities();
+  StreamSubscription? _navigateSub;
+  List<CommunityModel> _communities = [];
 
   @override
   void initState() {
     super.initState();
-    // Tải thông tin nhóm hiện tại khi màn hình khởi tạo
     context.read<TeamBloc>().add(const TeamLoadRequested());
+    _loadCommunities();
+    _navigateSub = AppEventBus.instance.navigateToTabStream.listen((tabIndex) {
+      if (mounted) {
+        setState(() => _selectedTabIndex = tabIndex);
+      }
+    });
+  }
+
+  Future<void> _loadCommunities() async {
+    try {
+      final communities = await CommunityRepository().getCommunities();
+      if (mounted) {
+        setState(() {
+          _communities = communities;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _communities = [];
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _navigateSub?.cancel();
+    super.dispose();
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -125,6 +158,14 @@ class _TeamScreenState extends State<TeamScreen> {
                               onReject: (reqId) {
                                 context.read<TeamBloc>().add(JoinRequestRejected(reqId));
                               },
+                              onViewProfile: (userId) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => UserProfileScreen(userId: userId),
+                                  ),
+                                );
+                              },
                             ),
                             _TeamTab(
                               hasTeam: hasTeam,
@@ -149,6 +190,14 @@ class _TeamScreenState extends State<TeamScreen> {
                               onReadyToggled: (ready) {
                                 context.read<TeamBloc>().add(TeamReadyToggled(ready));
                               },
+                              onViewProfile: (userId) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => UserProfileScreen(userId: userId),
+                                  ),
+                                );
+                              },
                             ),
                             _CommunityTab(communities: _communities, isSmallScreen: isSmallScreen),
                           ],
@@ -157,21 +206,21 @@ class _TeamScreenState extends State<TeamScreen> {
               ],
             ),
           ),
-          floatingActionButton: _buildFab(hasTeam, isLeader),
+          floatingActionButton: _buildFab(hasTeam, isLeader, state.currentTeam),
           floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         );
       },
     );
   }
 
-  Widget? _buildFab(bool hasTeam, bool isLeader) {
+  Widget? _buildFab(bool hasTeam, bool isLeader, TeamModel? currentTeam) {
     if (_selectedTabIndex == 0) return null;
     if (_selectedTabIndex == 1 && !hasTeam) return null;
     if (_selectedTabIndex == 1 && hasTeam) {
       // Chỉ cho phép mời người chơi nếu mình là leader
       if (!isLeader) return null;
       return FloatingActionButton.extended(
-        onPressed: () => _showSnackBar('Mời người chơi khác'),
+        onPressed: () => _navigateToInviteMember(currentTeam!),
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.white,
         elevation: 4,
@@ -181,11 +230,15 @@ class _TeamScreenState extends State<TeamScreen> {
     }
     if (_selectedTabIndex == 2) {
       return FloatingActionButton.extended(
-        onPressed: () {
-          Navigator.push(
+        onPressed: () async {
+          final result = await Navigator.push<bool>(
             context,
             MaterialPageRoute(builder: (_) => const CreateCommunityScreen()),
           );
+          // Reload profile when returning from create community
+          if (result == true && mounted) {
+            context.read<ProfileBloc>().add(const ProfileLoadRequested());
+          }
         },
         backgroundColor: AppColors.primary,
         foregroundColor: AppColors.white,
@@ -195,6 +248,13 @@ class _TeamScreenState extends State<TeamScreen> {
       );
     }
     return null;
+  }
+
+  void _navigateToInviteMember(TeamModel team) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => InviteMemberScreen(team: team)),
+    );
   }
 }
 
@@ -248,6 +308,7 @@ class _RequestTab extends StatelessWidget {
   final bool isSmallScreen;
   final void Function(String) onAccept;
   final void Function(String) onReject;
+  final void Function(String userId) onViewProfile;
 
   const _RequestTab({
     required this.requests,
@@ -255,6 +316,7 @@ class _RequestTab extends StatelessWidget {
     required this.isSmallScreen,
     required this.onAccept,
     required this.onReject,
+    required this.onViewProfile,
   });
 
   @override
@@ -304,6 +366,7 @@ class _RequestTab extends StatelessWidget {
                     isSmallScreen: isSmallScreen,
                     onAccept: () => onAccept(request.id),
                     onReject: () => onReject(request.id),
+                    onViewProfile: () => onViewProfile(request.userId),
                   ),
                 )),
           const SizedBox(height: 120),
@@ -318,8 +381,15 @@ class _JoinRequestCard extends StatelessWidget {
   final bool isSmallScreen;
   final VoidCallback onAccept;
   final VoidCallback onReject;
+  final VoidCallback onViewProfile;
 
-  const _JoinRequestCard({required this.request, required this.isSmallScreen, required this.onAccept, required this.onReject});
+  const _JoinRequestCard({
+    required this.request,
+    required this.isSmallScreen,
+    required this.onAccept,
+    required this.onReject,
+    required this.onViewProfile,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -334,32 +404,38 @@ class _JoinRequestCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: isSmallScreen ? 22 : 26,
-            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-            backgroundImage: request.userAvatarUrl != null ? NetworkImage(request.userAvatarUrl!) : null,
-            child: request.userAvatarUrl == null
-                ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
-                : null,
+          GestureDetector(
+            onTap: onViewProfile,
+            child: CircleAvatar(
+              radius: isSmallScreen ? 22 : 26,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+              backgroundImage: request.userAvatarUrl != null ? NetworkImage(request.userAvatarUrl!) : null,
+              child: request.userAvatarUrl == null
+                  ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
+                  : null,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(request.userDisplayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                const SizedBox(height: 4),
-                if (request.message != null && request.message!.isNotEmpty)
-                  Text(
-                    'Lời nhắn: "${request.message}"',
-                    style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
-                  )
-                else
-                  Text(
-                    'Không có lời nhắn',
-                    style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textLight),
-                  ),
-              ],
+            child: GestureDetector(
+              onTap: onViewProfile,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(request.userDisplayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                  const SizedBox(height: 4),
+                  if (request.message != null && request.message!.isNotEmpty)
+                    Text(
+                      'Lời nhắn: "${request.message}"',
+                      style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+                    )
+                  else
+                    Text(
+                      'Không có lời nhắn',
+                      style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textLight),
+                    ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -401,6 +477,7 @@ class _TeamTab extends StatelessWidget {
   final VoidCallback onDisbandTeam;
   final VoidCallback onLeaveTeam;
   final void Function(bool) onReadyToggled;
+  final void Function(String userId) onViewProfile;
 
   const _TeamTab({
     required this.hasTeam,
@@ -411,6 +488,7 @@ class _TeamTab extends StatelessWidget {
     required this.onDisbandTeam,
     required this.onLeaveTeam,
     required this.onReadyToggled,
+    required this.onViewProfile,
   });
 
   @override
@@ -458,6 +536,7 @@ class _TeamTab extends StatelessWidget {
                 member: member,
                 isLeader: member.isLeader || member.userId == currentTeam.ownerId,
                 isSmallScreen: isSmallScreen,
+                onTap: () => onViewProfile(member.userId),
               ),
             );
           }),
@@ -648,78 +727,87 @@ class _MemberRow extends StatelessWidget {
   final TeamMemberModel member;
   final bool isLeader;
   final bool isSmallScreen;
+  final VoidCallback onTap;
 
-  const _MemberRow({required this.member, required this.isLeader, required this.isSmallScreen});
+  const _MemberRow({
+    required this.member,
+    required this.isLeader,
+    required this.isSmallScreen,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
     final avatarSize = isSmallScreen ? 40.0 : 46.0;
 
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 16, vertical: isSmallScreen ? 12 : 14),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Row(
-        children: [
-          Stack(
-            children: [
-              CircleAvatar(
-                radius: avatarSize / 2,
-                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                backgroundImage: member.avatarUrl != null ? NetworkImage(member.avatarUrl!) : null,
-                child: member.avatarUrl == null
-                    ? Icon(Icons.person, color: AppColors.primary, size: avatarSize / 2)
-                    : null,
-              ),
-              if (member.isOnline)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: isSmallScreen ? 12 : 14,
-                    height: isSmallScreen ? 12 : 14,
-                    decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle, border: Border.all(color: AppColors.white, width: 2)),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 14 : 16, vertical: isSmallScreen ? 12 : 14),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          children: [
+            Stack(
               children: [
-                Row(
-                  children: [
-                    Text(member.displayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                    if (isLeader) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star_rounded, size: isSmallScreen ? 10 : 12, color: AppColors.primary),
-                            const SizedBox(width: 2),
-                            Text('Chủ nhóm', style: TextStyle(fontSize: isSmallScreen ? 9 : 10, fontWeight: FontWeight.w600, color: AppColors.primary)),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                CircleAvatar(
+                  radius: avatarSize / 2,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                  backgroundImage: member.avatarUrl != null ? NetworkImage(member.avatarUrl!) : null,
+                  child: member.avatarUrl == null
+                      ? Icon(Icons.person, color: AppColors.primary, size: avatarSize / 2)
+                      : null,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  member.isReady ? "Đã sẵn sàng" : "Chưa sẵn sàng",
-                  style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: member.isReady ? AppColors.success : AppColors.textSecondary),
-                ),
+                if (member.isOnline)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: isSmallScreen ? 12 : 14,
+                      height: isSmallScreen ? 12 : 14,
+                      decoration: BoxDecoration(color: AppColors.success, shape: BoxShape.circle, border: Border.all(color: AppColors.white, width: 2)),
+                    ),
+                  ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(member.displayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                      if (isLeader) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.star_rounded, size: isSmallScreen ? 10 : 12, color: AppColors.primary),
+                              const SizedBox(width: 2),
+                              Text('Chủ nhóm', style: TextStyle(fontSize: isSmallScreen ? 9 : 10, fontWeight: FontWeight.w600, color: AppColors.primary)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    member.isReady ? "Đã sẵn sàng" : "Chưa sẵn sàng",
+                    style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: member.isReady ? AppColors.success : AppColors.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

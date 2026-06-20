@@ -14,17 +14,13 @@ class ProfileRepository {
     isOnline: true,
     gameInfo: const GameInfoModel(gameName: 'Liên Minh Huyền Thoại', rank: 'Kim Cương II', role: 'Mid / Top', hasMic: true),
     stats: const [
-      StatModel(label: 'Trận đã chơi', value: '1,284'),
-      StatModel(label: 'Tỉ lệ thắng', value: '62%'),
-      StatModel(label: 'Đội đã tham gia', value: '48'),
-      StatModel(label: 'Điểm uy tín', value: '98'),
+      StatModel(label: 'Trận đã chơi', value: '-'),
+      StatModel(label: 'Tỉ lệ thắng', value: '-'),
+      StatModel(label: 'Đội đã tham gia', value: '-'),
+      StatModel(label: 'Điểm uy tín', value: '-'),
     ],
-    currentTeam: const TeamInfoModel(teamName: 'Team Phoenix', game: 'Liên Minh Huyền Thoại', memberCount: 5, myRole: 'Đội trưởng'),
-    communities: const [
-      CommunityInfoModel(id: 'c1', name: 'Liên Minh Đại Chiến', memberCount: '1.2k', isOnline: true),
-      CommunityInfoModel(id: 'c2', name: 'PUBG VN', memberCount: '850', isOnline: false),
-      CommunityInfoModel(id: 'c3', name: 'Valorant Elite', memberCount: '2.4k', isOnline: true),
-    ],
+    currentTeam: null,
+    communities: const [],
   );
 
   ProfileModel getMyProfile() {

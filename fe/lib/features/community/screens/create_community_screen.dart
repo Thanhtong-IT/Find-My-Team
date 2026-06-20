@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
 import '../data/community_repository.dart';
+import '../bloc/community_bloc.dart';
+import '../bloc/community_event.dart';
+import '../../profile/services/user_api_service.dart';
+import '../../profile/models/game_model.dart';
 
 class CreateCommunityScreen extends StatefulWidget {
   const CreateCommunityScreen({super.key});
@@ -12,16 +17,35 @@ class CreateCommunityScreen extends StatefulWidget {
 class _CreateCommunityScreenState extends State<CreateCommunityScreen> {
   final _nameController = TextEditingController();
   final _descController = TextEditingController();
-  String? _selectedGame;
+  GameModel? _selectedGame;
   bool _isPublic = true;
   bool _isSubmitting = false;
+  bool _isLoadingGames = true;
+  List<GameModel> _games = [];
 
-  final List<_GameOption> _games = const [
-    _GameOption(name: 'Liên Minh Huyền Thoại', icon: Icons.shield_outlined),
-    _GameOption(name: 'Valorant', icon: Icons.sports_esports_outlined),
-    _GameOption(name: 'PUBG Mobile', icon: Icons.gps_fixed_outlined),
-    _GameOption(name: 'Liên Quân Mobile', icon: Icons.sports_motorsports_outlined),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchGames();
+  }
+
+  Future<void> _fetchGames() async {
+    try {
+      final games = await UserApiService().getPopularGames();
+      if (mounted) {
+        setState(() {
+          _games = games;
+          _isLoadingGames = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLoadingGames = false;
+        });
+      }
+    }
+  }
 
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -51,14 +75,20 @@ class _CreateCommunityScreenState extends State<CreateCommunityScreen> {
     try {
       await CommunityRepository().createCommunity(
         name: _nameController.text.trim(),
-        game: _selectedGame!,
+        gameId: _selectedGame!.id,
         description: _descController.text.trim(),
         isPublic: _isPublic,
       );
+      
+      // Reload community list in the parent BlocProvider
       if (mounted) {
-        _showSnackBar('Đã tạo cộng đồng thành công');
-        Future.delayed(const Duration(milliseconds: 700), () {
-          if (mounted) Navigator.pop(context, true);
+        try {
+          context.read<CommunityBloc>().add(const CommunityLoadRequested());
+        } catch (_) {}
+        
+        _showSnackBar('Tạo cộng đồng thành công!');
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) Navigator.pop(context, true); // Return true to indicate success
         });
       }
     } catch (e) {
@@ -243,6 +273,10 @@ class _CreateCommunityScreenState extends State<CreateCommunityScreen> {
   }
 
   Widget _buildGameSection(bool isSmallScreen) {
+    if (_isLoadingGames) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -259,9 +293,9 @@ class _CreateCommunityScreenState extends State<CreateCommunityScreen> {
           spacing: 8,
           runSpacing: 8,
           children: _games.map((game) {
-            final isSelected = _selectedGame == game.name;
+            final isSelected = _selectedGame?.id == game.id;
             return GestureDetector(
-              onTap: () => setState(() => _selectedGame = game.name),
+              onTap: () => setState(() => _selectedGame = game),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: EdgeInsets.symmetric(
@@ -280,7 +314,7 @@ class _CreateCommunityScreenState extends State<CreateCommunityScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      game.icon,
+                      Icons.sports_esports_outlined,
                       size: isSmallScreen ? 14 : 16,
                       color: isSelected ? AppColors.primary : AppColors.textSecondary,
                     ),
@@ -502,11 +536,4 @@ class _CreateCommunityScreenState extends State<CreateCommunityScreen> {
       ),
     );
   }
-}
-
-class _GameOption {
-  final String name;
-  final IconData icon;
-
-  const _GameOption({required this.name, required this.icon});
 }

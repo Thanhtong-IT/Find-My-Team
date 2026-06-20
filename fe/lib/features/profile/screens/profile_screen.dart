@@ -19,6 +19,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +45,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         (route) => false,
       );
     }
+  }
+
+  void _navigateToExploreTab(BuildContext context) {
+    // Navigate to main screen and switch to Explore tab (index 1)
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/main',
+      (route) => false,
+    ).then((_) {
+      // After navigation, find MainNavigationScreen and change tab
+      // This is handled by passing initialIndex
+    });
+    // Use a workaround: navigate to /main with initialIndex
+    Navigator.pushReplacementNamed(context, '/main', arguments: 1);
   }
 
   @override
@@ -102,12 +117,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             );
           }
 
-          // Mock default stats for display since backend has no stats fields
+          // Default stats - backend doesn't provide stats yet
           final stats = [
-            const StatModel(label: 'Trận đã chơi', value: '1,284'),
-            const StatModel(label: 'Tỉ lệ thắng', value: '62%'),
-            const StatModel(label: 'Đội đã tham gia', value: '48'),
-            const StatModel(label: 'Điểm uy tín', value: '98'),
+            const StatModel(label: 'Trận đã chơi', value: '-'),
+            const StatModel(label: 'Tỉ lệ thắng', value: '-'),
+            const StatModel(label: 'Đội đã tham gia', value: '-'),
+            const StatModel(label: 'Điểm uy tín', value: '-'),
           ];
 
           final profile = ProfileModel(
@@ -160,7 +175,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildCurrentTeam(ProfileModel profile, bool isSmallScreen, BuildContext context) {
     final team = profile.currentTeam;
-    if (team == null) {
+
+    // Safety check: if team is null or has no meaningful data, show empty state
+    if (team == null || team.teamName.isEmpty) {
       return _CardWrapper(
         isSmallScreen: isSmallScreen,
         child: Column(
@@ -173,9 +190,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Icon(Icons.group_off_rounded, size: isSmallScreen ? 40 : 48, color: AppColors.textLight),
                   const SizedBox(height: 8),
-                  Text('Bạn chưa có nhóm', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: AppColors.textSecondary)),
+                  Text('Bạn chưa tham gia đội nhóm nào', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: AppColors.textSecondary)),
                   const SizedBox(height: 4),
                   Text('Tìm đội để bắt đầu chơi!', style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textLight)),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      // Navigate to Explore tab (index 1)
+                      final mainNav = Navigator.of(context, rootNavigator: true);
+                      if (mainNav.canPop()) {
+                        mainNav.pop();
+                      }
+                      // Use a callback to change tab
+                      _navigateToExploreTab(context);
+                    },
+                    icon: const Icon(Icons.search, size: 18),
+                    label: const Text('Tìm đội ngay'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.white,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isSmallScreen ? 16 : 20,
+                        vertical: isSmallScreen ? 8 : 10,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -220,7 +260,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  team.myRole,
+                  team.myRole.isNotEmpty ? team.myRole : 'Thành viên',
                   style: TextStyle(
                     fontSize: isSmallScreen ? 11 : 12,
                     fontWeight: FontWeight.w600,

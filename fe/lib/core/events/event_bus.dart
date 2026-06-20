@@ -2,14 +2,44 @@ import 'dart:async';
 import '../websocket/websocket_client.dart';
 
 /// EventBus đơn giản để distribute WebSocket events tới các Bloc.
+/// Sử dụng singleton pattern với lazy initialization.
 class AppEventBus {
   AppEventBus._();
 
   static final AppEventBus instance = AppEventBus._();
 
   final _subController = StreamController<WsIncomingEvent>.broadcast();
+  final _teamReloadController = StreamController<void>.broadcast();
+  final _profileReloadController = StreamController<void>.broadcast();
+  final _navigateToTabController = StreamController<int>.broadcast();
+  bool _isRegistered = false;
+  StreamSubscription? _wsSubscription;
 
   Stream<WsIncomingEvent> get stream => _subController.stream;
+
+  /// Stream to trigger team data reload (e.g., after accepting invitation)
+  Stream<void> get teamReloadStream => _teamReloadController.stream;
+
+  /// Stream to trigger profile data reload (e.g., after creating/leaving team)
+  Stream<void> get profileReloadStream => _profileReloadController.stream;
+
+  /// Stream to navigate to a specific tab (e.g., switch to Team tab after accepting)
+  Stream<int> get navigateToTabStream => _navigateToTabController.stream;
+
+  /// Trigger team reload from anywhere in the app
+  void triggerTeamReload() {
+    _teamReloadController.add(null);
+  }
+
+  /// Trigger profile reload from anywhere in the app
+  void triggerProfileReload() {
+    _profileReloadController.add(null);
+  }
+
+  /// Navigate to a specific tab index
+  void navigateToTab(int tabIndex) {
+    _navigateToTabController.add(tabIndex);
+  }
 
   Stream<WsIncomingEvent> get messageStream =>
       stream.where((e) => e.type == WsEventType.messageCreated);
@@ -43,13 +73,30 @@ class AppEventBus {
   Stream<WsIncomingEvent> get typingStream => stream.where((e) =>
       e.type == WsEventType.typingStart || e.type == WsEventType.typingStop);
 
+  /// Register WebSocket client - safe to call multiple times.
   void register(WebSocketClient ws) {
-    ws.eventStream.listen((event) {
+    if (_isRegistered) {
+      return; // Already registered
+    }
+
+    _wsSubscription = ws.eventStream.listen((event) {
       _subController.add(event);
     });
+    _isRegistered = true;
+  }
+
+  /// Unregister - call on app dispose.
+  void unregister() {
+    _wsSubscription?.cancel();
+    _wsSubscription = null;
+    _isRegistered = false;
   }
 
   void dispose() {
+    unregister();
     _subController.close();
+    _teamReloadController.close();
+    _profileReloadController.close();
+    _navigateToTabController.close();
   }
 }

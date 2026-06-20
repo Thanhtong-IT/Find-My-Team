@@ -13,6 +13,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   final WebSocketClient _wsClient;
   StreamSubscription? _wsSub;
   StreamSubscription? _connSub;
+  StreamSubscription? _teamReloadSub;
 
   TeamBloc({
     required TeamApiService teamApiService,
@@ -38,6 +39,13 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
 
     _listenWebSocket();
     _listenConnection();
+    _listenTeamReload();
+  }
+
+  void _listenTeamReload() {
+    _teamReloadSub = AppEventBus.instance.teamReloadStream.listen((_) {
+      add(const ev.TeamLoadRequested());
+    });
   }
 
   void _listenWebSocket() {
@@ -83,8 +91,8 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   }
 
   void _listenConnection() {
-    _connSub = _wsClient.connectionStream.listen((connected) {
-      if (connected && state.currentTeam != null) {
+    _connSub = _wsClient.statusStream.listen((status) {
+      if (status == WsConnectionStatus.connected && state.currentTeam != null) {
         _wsClient.subscribeRoom(state.currentTeam!.id, 'team');
       }
     });
@@ -122,6 +130,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       );
       _wsClient.subscribeRoom(team.id, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, successMessage: 'Đã tạo nhóm!'));
+      AppEventBus.instance.triggerProfileReload();
     } catch (e) {
       debugPrint('[TeamBloc] _onCreateRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể tạo nhóm: $e'));
@@ -149,6 +158,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       await _teamApiService.leaveTeam(teamId);
       _wsClient.unsubscribeRoom(teamId, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, clearTeam: true, successMessage: 'Đã rời nhóm'));
+      AppEventBus.instance.triggerProfileReload();
     } catch (e) {
       debugPrint('[TeamBloc] _onLeaveRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể rời nhóm: $e'));
@@ -166,6 +176,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       await _teamApiService.disbandTeam(teamId);
       _wsClient.unsubscribeRoom(teamId, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, clearTeam: true, successMessage: 'Đã giải tán nhóm'));
+      AppEventBus.instance.triggerProfileReload();
     } catch (e) {
       debugPrint('[TeamBloc] _onDisbandRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể giải tán: $e'));
@@ -188,18 +199,26 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     Emitter<TeamState> emit,
   ) async {
     if (state.currentTeam == null) return;
+    emit(state.copyWith(status: TeamStatus.loading));
     try {
       await _teamApiService.acceptJoinRequest(
         teamId: state.currentTeam!.id,
         requestId: event.requestId,
       );
+      // Reload team to get updated member list
+      final team = await _teamApiService.getMyTeam();
+      if (team != null) {
+        _wsClient.subscribeRoom(team.id, 'team');
+      }
       emit(state.copyWith(
+        status: TeamStatus.loaded,
+        currentTeam: team,
         joinRequests: state.joinRequests.where((r) => r.id != event.requestId).toList(),
-        successMessage: 'Đã chấp nhận',
+        successMessage: 'Đã chấp nhận thành viên',
       ));
     } catch (e) {
       debugPrint('[TeamBloc] _onAcceptRequest ERROR: $e');
-      emit(state.copyWith(errorMessage: 'Không thể chấp nhận: $e'));
+      emit(state.copyWith(status: TeamStatus.loaded, errorMessage: 'Không thể chấp nhận: $e'));
     }
   }
 
@@ -246,33 +265,18 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     }
   }
 
-  void _onMemberJoined(ev.TeamMemberJoinedEvent event, Emitter<TeamState> emit) {
+  void _onMemberJoined(ev.TeamMemberJoinedEvent event, Emitter<TeamState> emit) async {
     if (state.currentTeam == null) return;
-    // Prevent duplicate: skip if member already exists
-    if (state.currentTeam!.members.any((m) => m.userId == event.userId)) {
-      return;
+    // Reload entire team to ensure data consistency
+    try {
+      final team = await _teamApiService.getMyTeam();
+      if (team != null) {
+        _wsClient.subscribeRoom(team.id, 'team');
+      }
+      emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, clearTeam: team == null));
+    } catch (e) {
+      debugPrint('[TeamBloc] _onMemberJoined reload failed: $e');
     }
-    final updatedMembers = List<TeamMemberModel>.from(state.currentTeam!.members);
-    updatedMembers.add(TeamMemberModel(
-      id: '0',
-      userId: event.userId,
-      displayName: event.displayName,
-      isOnline: true,
-    ));
-    emit(state.copyWith(
-      currentTeam: TeamModel(
-        id: state.currentTeam!.id,
-        name: state.currentTeam!.name,
-        gameId: state.currentTeam!.gameId,
-        gameName: state.currentTeam!.gameName,
-        maxMembers: state.currentTeam!.maxMembers,
-        ownerId: state.currentTeam!.ownerId,
-        ownerName: state.currentTeam!.ownerName,
-        isRecruiting: state.currentTeam!.isRecruiting,
-        members: updatedMembers,
-        createdAt: state.currentTeam!.createdAt,
-      ),
-    ));
   }
 
   void _onMemberLeft(ev.TeamMemberLeftEvent event, Emitter<TeamState> emit) {
@@ -345,6 +349,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   Future<void> close() {
     _wsSub?.cancel();
     _connSub?.cancel();
+    _teamReloadSub?.cancel();
     return super.close();
   }
 }

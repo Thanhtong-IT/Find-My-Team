@@ -50,3 +50,16 @@ class CommunityChannelsLoadRequested extends CommunityEvent {
   @override
   List<Object?> get props => [communityId];
 }
+
+class CommunityChannelCreateRequested extends CommunityEvent {
+  final String communityId;
+  final String name;
+  final String type;
+  const CommunityChannelCreateRequested({
+    required this.communityId,
+    required this.name,
+    required this.type,
+  });
+  @override
+  List<Object?> get props => [communityId, name, type];
+}

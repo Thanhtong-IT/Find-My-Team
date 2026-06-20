@@ -4,6 +4,39 @@ import '../../../core/constants/api_constants.dart';
 import '../models/profile_model.dart';
 import '../models/game_model.dart';
 
+class UserSearchResult {
+  final String id;
+  final String username;
+  final String displayName;
+  final String? avatarUrl;
+  final bool isOnline;
+  final UserGameProfileModel? gameProfile;
+
+  const UserSearchResult({
+    required this.id,
+    required this.username,
+    required this.displayName,
+    this.avatarUrl,
+    this.isOnline = false,
+    this.gameProfile,
+  });
+
+  factory UserSearchResult.fromJson(Map<String, dynamic> json) {
+    UserGameProfileModel? gp;
+    if (json['gameProfile'] != null) {
+      gp = UserGameProfileModel.fromJson(json['gameProfile'] as Map<String, dynamic>);
+    }
+    return UserSearchResult(
+      id: json['id']?.toString() ?? '',
+      username: json['username'] as String? ?? '',
+      displayName: json['displayName'] as String? ?? json['username'] as String? ?? 'Unknown',
+      avatarUrl: json['avatarUrl'] as String?,
+      isOnline: json['isOnline'] as bool? ?? false,
+      gameProfile: gp,
+    );
+  }
+}
+
 class UserApiService {
   Future<List<GameModel>> getPopularGames() async {
     try {
@@ -25,6 +58,19 @@ class UserApiService {
       throw DioException(
         requestOptions: resp.requestOptions,
         message: json?['message'] as String? ?? 'Không thể tải profile',
+      );
+    }
+    return UserProfileModel.fromJson(json['data'] as Map<String, dynamic>? ?? {});
+  }
+
+  Future<UserProfileModel> getUserProfile(String userId) async {
+    final url = ApiConstants.userProfileById.replaceFirst('{userId}', userId);
+    final resp = await DioClient.get(url);
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể tải profile người dùng',
       );
     }
     return UserProfileModel.fromJson(json['data'] as Map<String, dynamic>? ?? {});
@@ -82,6 +128,24 @@ class UserApiService {
         requestOptions: resp.requestOptions,
         message: json?['message'] as String? ?? 'Không thể xóa game profile',
       );
+    }
+  }
+
+  Future<List<UserSearchResult>> searchUsers(String query) async {
+    try {
+      final resp = await DioClient.get(
+        ApiConstants.explore,
+        queryParameters: {'q': query, 'limit': 20},
+      );
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        return [];
+      }
+      final list = json['data'] as List<dynamic>?;
+      if (list == null) return [];
+      return list.map((e) => UserSearchResult.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (e) {
+      return [];
     }
   }
 }

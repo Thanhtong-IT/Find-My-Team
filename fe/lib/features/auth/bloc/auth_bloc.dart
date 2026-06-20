@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/repository/secure_storage_repository.dart';
 import '../../../core/websocket/websocket_client.dart';
 import '../../../core/events/event_bus.dart';
@@ -121,8 +122,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _connectWebSocket() async {
     final token = await _secureStorage.getAccessToken();
     if (token == null || token.isEmpty) return;
+    final wsUrl = dotenv.env['WS_URL'] ?? 'ws://localhost:8080/ws';
     _wsClient.connect(
-      url: 'ws://localhost:8080/ws',
+      url: wsUrl,
       token: token,
     );
     AppEventBus.instance.register(_wsClient);

@@ -74,8 +74,8 @@ class ConnectivityBloc extends Bloc<ConnectivityEvent, ConnectivityState> {
     });
 
     // Theo dõi WebSocket connection state
-    _wsSub = _wsClient.connectionStream.listen((connected) {
-      if (connected) {
+    _wsSub = _wsClient.statusStream.listen((status) {
+      if (status == WsConnectionStatus.connected) {
         _wsClient.resume();
         add(const WebSocketConnected());
       }

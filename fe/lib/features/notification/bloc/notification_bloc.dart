@@ -17,17 +17,21 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     on<NotificationMarkAsReadRequested>(_onMarkAsRead);
     on<NotificationMarkAllReadRequested>(_onMarkAllRead);
     on<NotificationNewReceived>(_onNewReceived);
+    on<NotificationAcceptInvitationRequested>(_onAcceptInvitation);
+    on<NotificationRejectInvitationRequested>(_onRejectInvitation);
 
     _listenWebSocket();
   }
 
   void _listenWebSocket() {
     _wsSub = AppEventBus.instance.notificationStream.listen((event) {
+      print('[WS_DEBUG] Received event: type=${event.type}, data=${event.data}');
+
       NotificationItemModel notif;
       if (event.type == WsEventType.joinRequestAccepted) {
         notif = NotificationItemModel(
           id: event.data['requestId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-          type: event.type.name,
+          type: 'join_request',
           title: 'Yêu cầu được chấp nhận!',
           body: 'Bạn đã được thêm vào nhóm. Nhấn để xem nhóm.',
           timestamp: DateTime.now(),
@@ -36,11 +40,20 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
       } else if (event.type == WsEventType.joinRequestRejected) {
         notif = NotificationItemModel(
           id: event.data['requestId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-          type: event.type.name,
+          type: 'join_request',
           title: 'Yêu cầu bị từ chối',
           body: 'Yêu cầu tham gia nhóm của bạn đã bị từ chối.',
           timestamp: DateTime.now(),
           actionId: null,
+        );
+      } else if (event.type == WsEventType.invitationReceived) {
+        notif = NotificationItemModel(
+          id: event.data['invitationId']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
+          type: 'team_invite',
+          title: 'Bạn có lời mời mới',
+          body: 'Có người muốn chơi cùng bạn',
+          timestamp: DateTime.now(),
+          actionId: event.data['invitationId']?.toString(),
         );
       } else {
         notif = NotificationItemModel(
@@ -61,17 +74,23 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationLoadRequested event,
     Emitter<NotificationState> emit,
   ) async {
+    print('[BLOC_DEBUG] _onLoadRequested called');
     emit(state.copyWith(status: NotificationStatus.loading));
     try {
+      print('[BLOC_DEBUG] Calling API...');
       final notifs = await _apiService.getNotifications();
+      print('[BLOC_DEBUG] Got ${notifs.length} notifications');
       final unread = notifs.where((n) => !n.isRead).length;
       emit(state.copyWith(
         status: NotificationStatus.loaded,
         notifications: notifs,
         unreadCount: unread,
       ));
-    } catch (e) {
-      emit(state.copyWith(status: NotificationStatus.error, errorMessage: 'Không thể tải thông báo'));
+      print('[BLOC_DEBUG] State updated successfully');
+    } catch (e, stack) {
+      print('[BLOC_DEBUG] ERROR loading notifications: $e');
+      print('[BLOC_DEBUG] Stack trace: $stack');
+      emit(state.copyWith(status: NotificationStatus.error, errorMessage: 'Không thể tải thông báo: $e'));
     }
   }
 
@@ -115,6 +134,56 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
       notifications: [event.notif, ...state.notifications],
       unreadCount: state.unreadCount + 1,
     ));
+  }
+
+  Future<void> _onAcceptInvitation(
+    NotificationAcceptInvitationRequested event,
+    Emitter<NotificationState> emit,
+  ) async {
+    emit(state.copyWith(actionStatus: ActionStatus.accepting));
+
+    try {
+      await _apiService.acceptInvitation(event.invitationId);
+
+      // Remove notification from list
+      final updated = state.notifications.where((n) => n.id != event.notificationId).toList();
+      emit(state.copyWith(
+        actionStatus: ActionStatus.success,
+        actionMessage: 'Đã chấp nhận lời mời!',
+        notifications: updated,
+        unreadCount: updated.where((n) => !n.isRead).length,
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        actionStatus: ActionStatus.error,
+        actionMessage: 'Không thể chấp nhận lời mời',
+      ));
+    }
+  }
+
+  Future<void> _onRejectInvitation(
+    NotificationRejectInvitationRequested event,
+    Emitter<NotificationState> emit,
+  ) async {
+    emit(state.copyWith(actionStatus: ActionStatus.rejecting));
+
+    try {
+      await _apiService.rejectInvitation(event.invitationId);
+
+      // Remove notification from list
+      final updated = state.notifications.where((n) => n.id != event.notificationId).toList();
+      emit(state.copyWith(
+        actionStatus: ActionStatus.success,
+        actionMessage: 'Đã từ chối lời mời',
+        notifications: updated,
+        unreadCount: updated.where((n) => !n.isRead).length,
+      ));
+    } catch (e) {
+      emit(state.copyWith(
+        actionStatus: ActionStatus.error,
+        actionMessage: 'Không thể từ chối lời mời',
+      ));
+    }
   }
 
   @override

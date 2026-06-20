@@ -1,36 +1,28 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
 import '../bloc/notification_event.dart';
-import '../models/notification_model.dart';
 
 class NotificationCard extends StatelessWidget {
   final NotificationItemModel notification;
   final bool isSmallScreen;
   final VoidCallback? onTap;
+  final VoidCallback? onAccept;
+  final VoidCallback? onReject;
+  final bool isLoading;
 
   const NotificationCard({
     super.key,
     required this.notification,
     required this.isSmallScreen,
     this.onTap,
+    this.onAccept,
+    this.onReject,
+    this.isLoading = false,
   });
-
-  NotificationType _getType() {
-    switch (notification.type) {
-      case 'teamInvite': return NotificationType.teamInvite;
-      case 'joinRequest': return NotificationType.joinRequest;
-      case 'communityPost': return NotificationType.communityPost;
-      case 'chatMessage': return NotificationType.chatMessage;
-      case 'requestAccepted': return NotificationType.requestAccepted;
-      case 'requestRejected': return NotificationType.requestRejected;
-      default: return NotificationType.communityPost;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final showActions = notification.type == 'joinRequest' || notification.type == 'teamInvite';
-    final notifType = _getType();
+    final showActions = notification.type == 'team_invite' || notification.type == 'join_request';
 
     return GestureDetector(
       onTap: onTap,
@@ -51,7 +43,7 @@ class NotificationCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildIcon(notifType),
+                _buildIcon(),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -98,42 +90,54 @@ class NotificationCard extends StatelessWidget {
                 ),
               ],
             ),
-            if (showActions) ...[
+            if (showActions && (onAccept != null || onReject != null)) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: isSmallScreen ? 32 : 36,
-                      child: ElevatedButton(
-                        onPressed: onTap,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.success,
-                          foregroundColor: AppColors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          padding: EdgeInsets.zero,
+                  if (onAccept != null)
+                    Expanded(
+                      child: SizedBox(
+                        height: isSmallScreen ? 32 : 36,
+                        child: ElevatedButton(
+                          onPressed: isLoading ? null : onAccept,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.success,
+                            foregroundColor: AppColors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: isLoading
+                              ? SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.white,
+                                  ),
+                                )
+                              : Text('Chấp nhận', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600)),
                         ),
-                        child: Text('Chấp nhận', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600)),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SizedBox(
-                      height: isSmallScreen ? 32 : 36,
-                      child: OutlinedButton(
-                        onPressed: onTap,
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.error,
-                          side: const BorderSide(color: AppColors.error),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          padding: EdgeInsets.zero,
+                  if (onAccept != null && onReject != null)
+                    const SizedBox(width: 8),
+                  if (onReject != null)
+                    Expanded(
+                      child: SizedBox(
+                        height: isSmallScreen ? 32 : 36,
+                        child: OutlinedButton(
+                          onPressed: isLoading ? null : onReject,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.error,
+                            side: const BorderSide(color: AppColors.error),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: Text('Từ chối', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600)),
                         ),
-                        child: Text('Từ chối', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600)),
                       ),
                     ),
-                  ),
                 ],
               ),
             ],
@@ -143,10 +147,10 @@ class NotificationCard extends StatelessWidget {
     );
   }
 
-  Widget _buildIcon(NotificationType type) {
-    final iconData = _getIcon(type);
-    final bgColor = _getBgColor(type);
-    final fgColor = _getFgColor(type);
+  Widget _buildIcon() {
+    final iconData = _getIcon();
+    final bgColor = _getBgColor();
+    final fgColor = _getFgColor();
 
     return Container(
       width: isSmallScreen ? 40 : 46,
@@ -156,36 +160,87 @@ class NotificationCard extends StatelessWidget {
     );
   }
 
-  IconData _getIcon(NotificationType type) {
-    switch (type) {
-      case NotificationType.teamInvite: return Icons.group_add_rounded;
-      case NotificationType.joinRequest: return Icons.person_add_alt_1_rounded;
-      case NotificationType.communityPost: return Icons.article_rounded;
-      case NotificationType.chatMessage: return Icons.chat_rounded;
-      case NotificationType.requestAccepted: return Icons.check_circle_rounded;
-      case NotificationType.requestRejected: return Icons.cancel_rounded;
+  IconData _getIcon() {
+    switch (notification.type) {
+      case 'team_invite':
+      case 'teamInvite':
+        return Icons.group_add_rounded;
+      case 'join_request':
+      case 'joinRequest':
+        return Icons.person_add_alt_1_rounded;
+      case 'community_post':
+      case 'communityPost':
+        return Icons.article_rounded;
+      case 'chat_message':
+      case 'chatMessage':
+        return Icons.chat_rounded;
+      case 'request_accepted':
+      case 'requestAccepted':
+        return Icons.check_circle_rounded;
+      case 'request_rejected':
+      case 'requestRejected':
+        return Icons.cancel_rounded;
+      case 'match_created':
+      case 'matchCreated':
+        return Icons.favorite_rounded;
+      default:
+        return Icons.notifications_rounded;
     }
   }
 
-  Color _getBgColor(NotificationType type) {
-    switch (type) {
-      case NotificationType.teamInvite: return const Color(0xFFEFF6FF);
-      case NotificationType.joinRequest: return const Color(0xFFF0FDF4);
-      case NotificationType.communityPost: return const Color(0xFFFEF3C7);
-      case NotificationType.chatMessage: return const Color(0xFFF3E8FF);
-      case NotificationType.requestAccepted: return const Color(0xFFDCFCE7);
-      case NotificationType.requestRejected: return const Color(0xFFFEE2E2);
+  Color _getBgColor() {
+    switch (notification.type) {
+      case 'team_invite':
+      case 'teamInvite':
+        return const Color(0xFFEFF6FF);
+      case 'join_request':
+      case 'joinRequest':
+        return const Color(0xFFF0FDF4);
+      case 'community_post':
+      case 'communityPost':
+        return const Color(0xFFFEF3C7);
+      case 'chat_message':
+      case 'chatMessage':
+        return const Color(0xFFF3E8FF);
+      case 'request_accepted':
+      case 'requestAccepted':
+        return const Color(0xFFDCFCE7);
+      case 'request_rejected':
+      case 'requestRejected':
+        return const Color(0xFFFEE2E2);
+      case 'match_created':
+      case 'matchCreated':
+        return const Color(0xFFFFE4E6);
+      default:
+        return const Color(0xFFF3F4F6);
     }
   }
 
-  Color _getFgColor(NotificationType type) {
-    switch (type) {
-      case NotificationType.teamInvite: return const Color(0xFF2563EB);
-      case NotificationType.joinRequest: return const Color(0xFF16A34A);
-      case NotificationType.communityPost: return const Color(0xFFD97706);
-      case NotificationType.chatMessage: return const Color(0xFF9333EA);
-      case NotificationType.requestAccepted: return const Color(0xFF16A34A);
-      case NotificationType.requestRejected: return const Color(0xFFDC2626);
+  Color _getFgColor() {
+    switch (notification.type) {
+      case 'team_invite':
+      case 'teamInvite':
+        return const Color(0xFF2563EB);
+      case 'join_request':
+      case 'joinRequest':
+        return const Color(0xFF16A34A);
+      case 'community_post':
+      case 'communityPost':
+        return const Color(0xFFD97706);
+      case 'chat_message':
+      case 'chatMessage':
+        return const Color(0xFF9333EA);
+      case 'request_accepted':
+      case 'requestAccepted':
+        return const Color(0xFF16A34A);
+      case 'request_rejected':
+      case 'requestRejected':
+        return const Color(0xFFDC2626);
+      case 'match_created':
+      case 'matchCreated':
+        return const Color(0xFFDB2777);
+      default:
+        return const Color(0xFF6B7280);
     }
   }
 

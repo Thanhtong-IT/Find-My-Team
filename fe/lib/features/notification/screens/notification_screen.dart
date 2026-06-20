@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/events/event_bus.dart';
 import '../bloc/notification_bloc.dart';
 import '../bloc/notification_event.dart';
 import '../bloc/notification_state.dart';
 import '../widgets/notification_card.dart';
 
 class NotificationScreen extends StatefulWidget {
-  const NotificationScreen({super.key});
+  final VoidCallback? onInvitationAccepted;
+
+  const NotificationScreen({super.key, this.onInvitationAccepted});
 
   @override
   State<NotificationScreen> createState() => _NotificationScreenState();
@@ -26,7 +29,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? AppColors.error : AppColors.primary,
+        backgroundColor: isError ? AppColors.error : AppColors.success,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -35,10 +38,26 @@ class _NotificationScreenState extends State<NotificationScreen> {
   List<NotificationItemModel> _getFilteredNotifications(NotificationState state) {
     switch (_selectedTabIndex) {
       case 0: return state.notifications;
-      case 1: return state.notifications.where((n) => n.type == 'joinRequest' || n.type == 'teamInvite').toList();
-      case 2: return state.notifications.where((n) => n.type == 'communityPost' || n.type == 'chatMessage' || n.type == 'requestAccepted' || n.type == 'requestRejected').toList();
+      case 1: return state.notifications.where((n) => n.type == 'join_request' || n.type == 'team_invite').toList();
+      case 2: return state.notifications.where((n) => n.type == 'community_post' || n.type == 'chat_message' || n.type == 'request_accepted' || n.type == 'request_rejected').toList();
       default: return [];
     }
+  }
+
+  void _onAccept(NotificationItemModel notif) {
+    if (notif.actionId == null) return;
+    context.read<NotificationBloc>().add(NotificationAcceptInvitationRequested(
+      notificationId: notif.id,
+      invitationId: notif.actionId!,
+    ));
+  }
+
+  void _onReject(NotificationItemModel notif) {
+    if (notif.actionId == null) return;
+    context.read<NotificationBloc>().add(NotificationRejectInvitationRequested(
+      notificationId: notif.id,
+      invitationId: notif.actionId!,
+    ));
   }
 
   @override
@@ -51,8 +70,22 @@ class _NotificationScreenState extends State<NotificationScreen> {
         if (state.errorMessage != null) {
           _showSnackBar(state.errorMessage!, isError: true);
         }
+        if (state.actionStatus == ActionStatus.success && state.actionMessage != null) {
+          _showSnackBar(state.actionMessage!);
+          // Trigger team reload and navigate to Team tab after accepting invitation
+          if (state.actionMessage!.contains('chấp nhận')) {
+            AppEventBus.instance.triggerTeamReload();
+            AppEventBus.instance.navigateToTab(1); // Switch to Team tab (index 1)
+            // Pop back to TeamScreen
+            Navigator.pop(context);
+          }
+        }
+        if (state.actionStatus == ActionStatus.error) {
+          _showSnackBar(state.actionMessage ?? 'Có lỗi xảy ra', isError: true);
+        }
       },
       builder: (context, state) {
+        final isActionLoading = state.actionStatus == ActionStatus.accepting || state.actionStatus == ActionStatus.rejecting;
         return Scaffold(
           backgroundColor: AppColors.white,
           body: Column(
@@ -60,7 +93,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
               _buildHeader(isSmallScreen, state),
               _buildTabs(isSmallScreen),
               Expanded(
-                child: _buildNotificationList(isSmallScreen, state),
+                child: _buildNotificationList(isSmallScreen, state, isActionLoading),
               ),
             ],
           ),
@@ -148,7 +181,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     );
   }
 
-  Widget _buildNotificationList(bool isSmallScreen, NotificationState state) {
+  Widget _buildNotificationList(bool isSmallScreen, NotificationState state, bool isActionLoading) {
     if (state.status == NotificationStatus.loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -206,6 +239,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       itemCount: notifications.length,
       itemBuilder: (context, index) {
         final notif = notifications[index];
+        final showActions = notif.type == 'team_invite' || notif.type == 'join_request';
         return NotificationCard(
           notification: notif,
           isSmallScreen: isSmallScreen,
@@ -214,6 +248,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
               context.read<NotificationBloc>().add(NotificationMarkAsReadRequested(notif.id));
             }
           },
+          onAccept: showActions ? () => _onAccept(notif) : null,
+          onReject: showActions ? () => _onReject(notif) : null,
+          isLoading: isActionLoading,
         );
       },
     );

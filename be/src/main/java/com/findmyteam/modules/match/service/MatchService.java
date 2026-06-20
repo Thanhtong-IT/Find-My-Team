@@ -10,6 +10,8 @@ import com.findmyteam.modules.match.entity.Match;
 import com.findmyteam.modules.match.entity.Swipe;
 import com.findmyteam.modules.match.repository.MatchRepository;
 import com.findmyteam.modules.match.repository.SwipeRepository;
+import com.findmyteam.modules.notification.service.NotificationService;
+import com.findmyteam.modules.auth.repository.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -25,13 +27,19 @@ public class MatchService {
     private final SwipeRepository swipeRepository;
     private final MatchRepository matchRepository;
     private final EventPublisher eventPublisher;
+    private final NotificationService notificationService;
+    private final UserRepository userRepository;
 
     public MatchService(SwipeRepository swipeRepository,
                       MatchRepository matchRepository,
-                      EventPublisher eventPublisher) {
+                      EventPublisher eventPublisher,
+                      NotificationService notificationService,
+                      UserRepository userRepository) {
         this.swipeRepository = swipeRepository;
         this.matchRepository = matchRepository;
         this.eventPublisher = eventPublisher;
+        this.notificationService = notificationService;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -81,6 +89,31 @@ public class MatchService {
         }
 
         Match match = doCreateMatch(userAId, userBId, gameId);
+
+        // Create notification for both users
+        String userBName = userRepository.findById(userBId)
+                .map(u -> u.getDisplayName() != null ? u.getDisplayName() : u.getUsername())
+                .orElse("Người dùng");
+        notificationService.createNotification(
+                userAId,
+                "match_created",
+                "Ghép đôi thành công!",
+                "Bạn và " + userBName + " đã ghép đôi thành công",
+                match.getId().toString(),
+                userBId.toString()
+        );
+
+        String userAName = userRepository.findById(userAId)
+                .map(u -> u.getDisplayName() != null ? u.getDisplayName() : u.getUsername())
+                .orElse("Người dùng");
+        notificationService.createNotification(
+                userBId,
+                "match_created",
+                "Ghép đôi thành công!",
+                "Bạn và " + userAName + " đã ghép đôi thành công",
+                match.getId().toString(),
+                userAId.toString()
+        );
 
         eventPublisher.publish(EventType.MATCH_CREATED, Map.of(
             "matchId", match.getId(),

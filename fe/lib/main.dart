@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/constants/constants.dart';
 import 'core/di/injection.dart';
 import 'core/repository/secure_storage_repository.dart';
@@ -22,6 +23,7 @@ import 'features/explore/bloc/explore_bloc.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await setupDependencies();
   runApp(const FindMyTeamApp());
 }
@@ -83,7 +85,10 @@ class FindMyTeamApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
           '/setup-profile': (context) => const SetupProfileScreen(),
-          '/main': (context) => const MainNavigationScreen(),
+          '/main': (context) {
+            final initialIndex = ModalRoute.of(context)?.settings.arguments as int? ?? 0;
+            return MainNavigationScreen(initialIndex: initialIndex);
+          },
         },
         builder: (context, child) {
           return BlocListener<ConnectivityBloc, ConnectivityState>(

@@ -7,6 +7,7 @@ import com.findmyteam.common.exception.BusinessException;
 import com.findmyteam.common.exception.ResourceNotFoundException;
 import com.findmyteam.modules.game.entity.Game;
 import com.findmyteam.modules.game.repository.GameRepository;
+import com.findmyteam.modules.notification.service.NotificationService;
 import com.findmyteam.modules.team.dto.*;
 import com.findmyteam.modules.team.entity.*;
 import com.findmyteam.modules.team.repository.*;
@@ -20,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -39,6 +41,7 @@ public class TeamService {
     private final PresenceService presenceService;
     private final EventSubscriber eventSubscriber;
     private final UserRepository userRepository;
+    private final NotificationService notificationService;
 
     public TeamService(TeamRepository teamRepository,
                       TeamMemberRepository teamMemberRepository,
@@ -48,7 +51,8 @@ public class TeamService {
                       EventPublisher eventPublisher,
                       PresenceService presenceService,
                       EventSubscriber eventSubscriber,
-                      UserRepository userRepository) {
+                      UserRepository userRepository,
+                      NotificationService notificationService) {
         this.teamRepository = teamRepository;
         this.teamMemberRepository = teamMemberRepository;
         this.joinRequestRepository = joinRequestRepository;
@@ -58,6 +62,7 @@ public class TeamService {
         this.presenceService = presenceService;
         this.eventSubscriber = eventSubscriber;
         this.userRepository = userRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -173,7 +178,29 @@ public class TeamService {
             throw new BusinessException("Chỉ chủ nhóm mới có thể giải tán nhóm");
         }
 
+        // IMPORTANT: Get only ACTIVE members BEFORE any changes
+        // This ensures we only notify active members, not those who left
+        List<TeamMember> activeMembers = teamMemberRepository.findActiveMembersByTeamId(teamId);
+        String teamName = team.getName();
+
+        // Disband the team
         doDisbandTeam(team);
+
+        // Notify all ACTIVE members (except the leader who initiated the disband)
+        for (TeamMember member : activeMembers) {
+            // Skip the leader - they already know they disbanded the team
+            if (member.getUserId().equals(userId)) {
+                continue;
+            }
+            notificationService.createNotification(
+                    member.getUserId(),
+                    "system",
+                    "Nhóm đã bị giải tán",
+                    "Nhóm " + teamName + " đã bị giải tán bởi chủ nhóm",
+                    teamId.toString(),
+                    null
+            );
+        }
 
         eventPublisher.publish(EventType.TEAM_DISBANDED, Map.of(
             "teamId", teamId,
@@ -183,12 +210,18 @@ public class TeamService {
 
     @Transactional
     protected void doDisbandTeam(Team team) {
+        // Update ALL team members' status to LEFT before deleting the team
+        List<TeamMember> allMembers = teamMemberRepository.findByTeamId(team.getId());
+        for (TeamMember member : allMembers) {
+            member.setStatus(TeamMember.STATUS_LEFT);
+            member.setLeftAt(OffsetDateTime.now());
+            teamMemberRepository.save(member);
+            presenceService.leaveTeamRoom(member.getUserId(), team.getId());
+        }
+
+        // Soft delete: update team status to disbanded
         team.setStatus("disbanded");
         teamRepository.save(team);
-        teamMemberRepository.findByTeamId(team.getId())
-            .forEach(member -> {
-                presenceService.leaveTeamRoom(member.getUserId(), team.getId());
-            });
     }
 
     @Transactional
@@ -200,7 +233,7 @@ public class TeamService {
             throw new BusinessException("Chủ nhóm không thể rời nhóm. Hãy giải tán hoặc chuyển quyền.");
         }
 
-        int countBefore = teamMemberRepository.countByTeamId(teamId);
+        int countBefore = teamMemberRepository.countActiveMembersByTeamId(teamId);
 
         doLeaveTeam(userId, teamId);
 
@@ -217,7 +250,32 @@ public class TeamService {
 
     @Transactional
     protected void doLeaveTeam(UUID userId, UUID teamId) {
-        teamMemberRepository.deleteByTeamIdAndUserId(teamId, userId);
+        log.info("doLeaveTeam: userId={}, teamId={}", userId, teamId);
+        
+        // Check for ACTIVE member first
+        TeamMember member = teamMemberRepository.findActiveMemberByTeamIdAndUserId(teamId, userId)
+            .orElse(null);
+            
+        if (member == null) {
+            // Check if there's any record (even LEFT status)
+            Optional<TeamMember> anyRecord = teamMemberRepository.findByTeamIdAndUserId(teamId, userId);
+            if (anyRecord.isPresent()) {
+                log.warn("doLeaveTeam: found record but status is not ACTIVE, status={}", anyRecord.get().getStatus());
+                // Reactivate and then set to LEFT
+                member = anyRecord.get();
+                member.setStatus(TeamMember.STATUS_LEFT);
+                member.setLeftAt(OffsetDateTime.now());
+                teamMemberRepository.save(member);
+                presenceService.leaveTeamRoom(userId, teamId);
+                return;
+            }
+            throw new BusinessException("Bạn không phải thành viên nhóm");
+        }
+        
+        log.info("doLeaveTeam: found active member, setting status to LEFT");
+        member.setStatus(TeamMember.STATUS_LEFT);
+        member.setLeftAt(OffsetDateTime.now());
+        teamMemberRepository.save(member);
         presenceService.leaveTeamRoom(userId, teamId);
     }
 
@@ -226,7 +284,7 @@ public class TeamService {
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
 
-        TeamMember member = teamMemberRepository.findByTeamIdAndUserId(teamId, userId)
+        TeamMember member = teamMemberRepository.findActiveMemberByTeamIdAndUserId(teamId, userId)
             .orElseThrow(() -> new BusinessException("Bạn không phải thành viên nhóm"));
 
         boolean newReady = !member.isReady();
@@ -254,8 +312,8 @@ public class TeamService {
             throw new BusinessException("Nhóm này không còn tuyển thành viên");
         }
 
-        // Check user đang là thành viên của team này
-        if (teamMemberRepository.existsByTeamIdAndUserId(teamId, userId)) {
+        // Check user đang là ACTIVE thành viên của team này
+        if (teamMemberRepository.findActiveMemberByTeamIdAndUserId(teamId, userId).isPresent()) {
             throw new BusinessException("Bạn đã là thành viên nhóm");
         }
 
@@ -291,6 +349,17 @@ public class TeamService {
         if (displayName == null || displayName.isEmpty()) {
             displayName = applicant.getUsername();
         }
+
+        // Create notification for team owner
+        String teamName = team.getName();
+        notificationService.createNotification(
+                team.getOwnerId(),
+                "join_request",
+                "Yêu cầu tham gia nhóm",
+                displayName + " muốn tham gia " + teamName,
+                teamId.toString(),
+                userId.toString()
+        );
 
         eventPublisher.publish(EventType.JOIN_REQUEST_CREATED, Map.of(
             "requestId", request.getId(),
@@ -369,6 +438,17 @@ public class TeamService {
 
         // Publish JOIN_REQUEST_ACCEPTED đến user channel
         log.info("Publishing JOIN_REQUEST_ACCEPTED to events:user:{}", requesterId);
+
+        // Create notification for requester
+        notificationService.createNotification(
+                requesterId,
+                "request_accepted",
+                "Yêu cầu được chấp nhận!",
+                "Bạn đã được thêm vào nhóm " + team.getName(),
+                teamId.toString(),
+                null
+        );
+
         eventPublisher.publish(EventType.JOIN_REQUEST_ACCEPTED, Map.of(
             "requestId", requestId,
             "teamId", team.getId(),
@@ -410,6 +490,16 @@ public class TeamService {
         }
 
         doRejectJoinRequest(joinRequest);
+
+        // Create notification for requester
+        notificationService.createNotification(
+                joinRequest.getUserId(),
+                "request_rejected",
+                "Yêu cầu bị từ chối",
+                "Yêu cầu tham gia " + team.getName() + " của bạn đã bị từ chối",
+                teamId.toString(),
+                null
+        );
 
         eventPublisher.publish(EventType.JOIN_REQUEST_REJECTED, Map.of(
             "requestId", requestId,

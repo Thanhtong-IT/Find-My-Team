@@ -27,7 +27,7 @@ class CommunityModel {
     return CommunityModel(
       id: json['id']?.toString() ?? '',
       name: json['name'] as String? ?? 'No Name',
-      game: json['game'] as String? ?? json['gameId'] as String? ?? '',
+      game: json['gameName'] as String? ?? json['game'] as String? ?? '',
       description: json['description'] as String? ?? '',
       avatarPath: json['avatarPath'] as String? ?? json['avatarUrl'] as String?,
       coverPath: json['coverPath'] as String? ?? json['coverUrl'] as String?,

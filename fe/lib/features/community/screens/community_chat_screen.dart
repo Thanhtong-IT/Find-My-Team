@@ -1,15 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/repository/secure_storage_repository.dart';
 import '../models/community_model.dart';
 import '../models/channel_model.dart';
 import '../models/chat_message.dart';
 import '../bloc/chat_bloc.dart';
 import '../bloc/chat_event.dart';
 import '../bloc/chat_state.dart';
+import '../bloc/community_bloc.dart';
+import '../bloc/community_event.dart';
+import '../bloc/community_state.dart';
 import '../services/chat_api_service.dart';
 import '../data/community_repository.dart';
 import '../widgets/community_channel_drawer.dart';
+import '../widgets/create_channel_dialog.dart';
 
 class CommunityChatScreen extends StatefulWidget {
   final CommunityModel community;
@@ -21,39 +26,103 @@ class CommunityChatScreen extends StatefulWidget {
 }
 
 class _CommunityChatScreenState extends State<CommunityChatScreen> {
-  late ChannelModel _currentChannel;
+  ChannelModel? _currentChannel;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isLoadingChannels = true;
+  List<ChannelModel> _channels = [];
+  String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
-    final channels = CommunityRepository().getChannels(widget.community.id);
-    final textChannels = channels.where((c) => c.type == ChannelType.text).toList();
-    _currentChannel = textChannels.isNotEmpty ? textChannels.first : channels.first;
+    _loadCurrentUserId();
+    _loadChannels();
+  }
+
+  Future<void> _loadCurrentUserId() async {
+    final userId = await SecureStorageRepository().getUserId();
+    if (mounted) {
+      setState(() {
+        _currentUserId = userId;
+      });
+    }
+  }
+
+  Future<void> _loadChannels() async {
+    final channels = await CommunityRepository().getChannels(widget.community.id);
+    if (mounted && channels.isNotEmpty) {
+      final textChannels = channels.where((c) => c.type == ChannelType.text).toList();
+      setState(() {
+        _channels = channels;
+        _currentChannel = textChannels.isNotEmpty ? textChannels.first : channels.first;
+        _isLoadingChannels = false;
+      });
+    } else if (mounted) {
+      setState(() {
+        _channels = channels;
+        _isLoadingChannels = false;
+      });
+    }
   }
 
   void _onChannelSelected(ChannelModel channel) {
     setState(() => _currentChannel = channel);
   }
 
+  void _showCreateChannelDialog(BuildContext blocContext, ChannelType type) {
+    final communityBloc = blocContext.read<CommunityBloc>();
+    showDialog(
+      context: blocContext,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return BlocProvider.value(
+          value: communityBloc,
+          child: BlocListener<CommunityBloc, CommunityState>(
+            listener: (listenerContext, state) {
+              if (state.channelCreating == false && state.successMessage != null && state.errorMessage == null) {
+                Navigator.pop(dialogCtx);
+                _showSnackBar(state.successMessage!);
+                _loadChannels();
+              } else if (state.channelCreating == false && state.errorMessage != null) {
+                _showSnackBar(state.errorMessage!, isError: true);
+              }
+            },
+            child: CreateChannelDialog(
+              initialType: type,
+              onSubmit: (name, submittedType) {
+                communityBloc.add(CommunityChannelCreateRequested(
+                  communityId: widget.community.id,
+                  name: name,
+                  type: submittedType.name,
+                ));
+              },
+              onCancel: () => Navigator.pop(dialogCtx),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _sendMessage(BuildContext context) {
     final text = _messageController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _currentChannel == null) return;
     context.read<ChatBloc>().add(ChatSendMessageRequested(
       communityId: widget.community.id,
-      channelId: _currentChannel.id,
+      channelId: _currentChannel!.id,
       content: text,
     ));
     _messageController.clear();
   }
 
   void _retryMessage(BuildContext context, String clientMessageId) {
+    if (_currentChannel == null) return;
     context.read<ChatBloc>().add(ChatRetryMessageRequested(
       clientMessageId: clientMessageId,
       communityId: widget.community.id,
-      channelId: _currentChannel.id,
+      channelId: _currentChannel!.id,
     ));
   }
 
@@ -75,48 +144,110 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 420;
 
-    return BlocProvider(
-      create: (_) => ChatBloc(chatApiService: ChatApiService())
-        ..add(ChatMessagesLoadRequested(
-          communityId: widget.community.id,
-          channelId: _currentChannel.id,
-        )),
-      child: BlocListener<ChatBloc, ChatState>(
-        listener: (context, state) {
-          if (state.status == ChatStatus.error && state.errorMessage != null) {
-            _showSnackBar(state.errorMessage!, isError: true);
-          }
-          if (_scrollController.hasClients) {
-            _scrollController.animateTo(
-              _scrollController.position.maxScrollExtent,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          }
-        },
-        child: Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: AppColors.white,
-          drawer: Drawer(
-            child: CommunityChannelDrawer(
-              community: widget.community,
-              selectedChannel: _currentChannel,
-              onChannelSelected: _onChannelSelected,
-            ),
-          ),
-          body: Column(
+    if (_isLoadingChannels) {
+      return const Scaffold(
+        backgroundColor: AppColors.white,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final currentChannel = _currentChannel;
+    if (currentChannel == null) {
+      return Scaffold(
+        backgroundColor: AppColors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildAppBar(isSmallScreen),
-              Expanded(child: _buildMessageList(isSmallScreen)),
-              _buildInputBar(isSmallScreen),
+              const Icon(Icons.error_outline, size: 48, color: AppColors.textLight),
+              const SizedBox(height: 16),
+              const Text('Không có kênh nào', style: TextStyle(color: AppColors.textSecondary)),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadChannels,
+                child: const Text('Thử lại'),
+              ),
             ],
           ),
+        ),
+      );
+    }
+
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider(
+          create: (_) => ChatBloc(chatApiService: ChatApiService())
+            ..add(ChatMessagesLoadRequested(
+              communityId: widget.community.id,
+              channelId: currentChannel.id,
+            )),
+        ),
+        BlocProvider(
+          create: (_) => CommunityBloc()
+            ..add(CommunityChannelsLoadRequested(widget.community.id)),
+        ),
+      ],
+      child: MultiBlocListener(
+        listeners: [
+          BlocListener<ChatBloc, ChatState>(
+            listener: (context, state) {
+              if (state.status == ChatStatus.error && state.errorMessage != null) {
+                _showSnackBar(state.errorMessage!, isError: true);
+              }
+              if (_scrollController.hasClients) {
+                _scrollController.animateTo(
+                  _scrollController.position.maxScrollExtent,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              }
+            },
+          ),
+          BlocListener<CommunityBloc, CommunityState>(
+            listener: (context, state) {
+              if (state.successMessage != null) {
+                _showSnackBar(state.successMessage!);
+              }
+              if (state.errorMessage != null) {
+                _showSnackBar(state.errorMessage!, isError: true);
+              }
+            },
+          ),
+        ],
+        child: Builder(
+          builder: (context) {
+            return Scaffold(
+              key: _scaffoldKey,
+              backgroundColor: AppColors.white,
+              drawer: Drawer(
+                child: BlocBuilder<CommunityBloc, CommunityState>(
+                  builder: (context, communityState) {
+                    return CommunityChannelDrawer(
+                      community: widget.community,
+                      selectedChannel: currentChannel,
+                      channels: communityState.channels.isNotEmpty ? communityState.channels : _channels,
+                      isLoading: communityState.status == CommunityStatus.loading,
+                      onChannelSelected: _onChannelSelected,
+                      onCreateChannelPressed: (type) => _showCreateChannelDialog(context, type),
+                    );
+                  },
+                ),
+              ),
+              body: Column(
+                children: [
+                  _buildAppBar(isSmallScreen, currentChannel),
+                  Expanded(child: _buildMessageList(isSmallScreen)),
+                  _buildInputBar(isSmallScreen, currentChannel),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildAppBar(bool isSmallScreen) {
+  Widget _buildAppBar(bool isSmallScreen, ChannelModel currentChannel) {
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 4,
@@ -148,12 +279,12 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    _currentChannel.type == ChannelType.text ? '# ' : '\uD83D\uDD0A ',
+                    currentChannel.type == ChannelType.text ? '# ' : '\uD83D\uDD0A ',
                     style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary),
                   ),
                   Flexible(
                     child: Text(
-                      _currentChannel.name,
+                      currentChannel.name,
                       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -212,6 +343,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                 _MessageBubble(
                   message: msg,
                   isSmallScreen: isSmallScreen,
+                  currentUserId: _currentUserId,
                   onRetry: () => _retryMessage(context, msg.clientMessageId),
                 ),
               ],
@@ -249,8 +381,8 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 
   bool _isSameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
 
-  Widget _buildInputBar(bool isSmallScreen) {
-    final channelPrefix = _currentChannel.type == ChannelType.text ? '# ${_currentChannel.name}' : _currentChannel.name;
+  Widget _buildInputBar(bool isSmallScreen, ChannelModel currentChannel) {
+    final channelPrefix = currentChannel.type == ChannelType.text ? '# ${currentChannel.name}' : currentChannel.name;
     return Container(
       padding: EdgeInsets.only(
         left: isSmallScreen ? 10 : 14,
@@ -303,17 +435,19 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isSmallScreen;
+  final String? currentUserId;
   final VoidCallback onRetry;
 
   const _MessageBubble({
     required this.message,
     required this.isSmallScreen,
+    required this.currentUserId,
     required this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isMe = message.senderId == 'me';
+    final isMe = currentUserId != null && message.senderId == currentUserId;
     return Padding(
       padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 4 : 6),
       child: Row(

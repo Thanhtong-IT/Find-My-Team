@@ -6,12 +6,14 @@ class ProfileHeader extends StatelessWidget {
   final ProfileModel profile;
   final bool isSmallScreen;
   final VoidCallback? onEditTap;
+  final VoidCallback? onFriendTap;
 
   const ProfileHeader({
     super.key,
     required this.profile,
     required this.isSmallScreen,
     this.onEditTap,
+    this.onFriendTap,
   });
 
   @override
@@ -104,25 +106,53 @@ class ProfileHeader extends StatelessWidget {
             SizedBox(height: isSmallScreen ? 12 : 16),
             Padding(
               padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 40 : 60),
-              child: SizedBox(
-                height: isSmallScreen ? 38 : 42,
-                child: ElevatedButton.icon(
-                  onPressed: onEditTap,
-                  icon: Icon(Icons.edit_rounded, size: isSmallScreen ? 16 : 18),
-                  label: Text('Chỉnh sửa hồ sơ', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.white,
-                    foregroundColor: AppColors.primary,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
+              child: _buildActionButton(),
             ),
             SizedBox(height: isSmallScreen ? 14 : 20),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildActionButton() {
+    if (onFriendTap != null) {
+      // Show Friend button for other users' profiles
+      return SizedBox(
+        height: isSmallScreen ? 38 : 42,
+        child: ElevatedButton.icon(
+          onPressed: onFriendTap,
+          icon: Icon(Icons.person_add_rounded, size: isSmallScreen ? 16 : 18),
+          label: Text(
+            'Kết bạn',
+            style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.white,
+            foregroundColor: AppColors.primary,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
+    } else if (onEditTap != null) {
+      // Show Edit button for own profile
+      return SizedBox(
+        height: isSmallScreen ? 38 : 42,
+        child: ElevatedButton.icon(
+          onPressed: onEditTap,
+          icon: Icon(Icons.edit_rounded, size: isSmallScreen ? 16 : 18),
+          label: Text('Chỉnh sửa hồ sơ', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.white,
+            foregroundColor: AppColors.primary,
+            elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      );
+    }
+    // Read-only - no button
+    return const SizedBox.shrink();
   }
 }

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../constants/api_constants.dart';
 import 'auth_interceptor.dart';
 
@@ -17,8 +18,10 @@ class DioClient {
   static void init() {
     tokenRepository = TokenRepository(_storage);
 
+    final baseUrl = dotenv.env['API_BASE_URL'] ?? ApiConstants.defaultBaseUrl;
+
     instance = Dio(BaseOptions(
-      baseUrl: ApiConstants.baseUrl,
+      baseUrl: baseUrl,
       connectTimeout: ApiConstants.connectTimeout,
       receiveTimeout: ApiConstants.receiveTimeout,
       headers: {

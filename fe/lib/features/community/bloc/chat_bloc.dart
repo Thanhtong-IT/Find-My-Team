@@ -9,6 +9,7 @@ import 'chat_state.dart';
 class ChatBloc extends Bloc<ChatEvent, ChatState> {
   final ChatApiService _chatApiService;
   StreamSubscription? _wsSub;
+  String? _currentChannelId;
 
   ChatBloc({required ChatApiService chatApiService})
       : _chatApiService = chatApiService,
@@ -28,7 +29,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   void _listenWebSocket() {
     _wsSub = AppEventBus.instance.messageStream.listen((event) {
       final msg = ChatMessage.fromJson(event.data);
-      add(ChatMessageReceivedFromWebSocket(msg));
+      // Only add message if it belongs to current channel
+      if (_currentChannelId != null && msg.channelId == _currentChannelId) {
+        add(ChatMessageReceivedFromWebSocket(msg));
+      }
     });
   }
 
@@ -36,6 +40,9 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     ChatMessagesLoadRequested event,
     Emitter<ChatState> emit,
   ) async {
+    // Update current channel for WebSocket filtering
+    _currentChannelId = event.channelId;
+
     emit(state.copyWith(status: ChatStatus.loading));
     try {
       final messages = await _chatApiService.getMessages(

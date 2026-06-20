@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/events/event_bus.dart';
 import '../services/user_api_service.dart';
 import 'profile_event.dart';
 import 'profile_state.dart';
 
 class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
   final UserApiService _userApiService;
+  StreamSubscription? _profileReloadSub;
 
   ProfileBloc({required UserApiService userApiService})
       : _userApiService = userApiService,
@@ -14,6 +17,20 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     on<GameProfileAddRequested>(_onAddGameProfile);
     on<GameProfileDeleteRequested>(_onDeleteGameProfile);
     on<PopularGamesLoadRequested>(_onLoadPopularGames);
+
+    _listenProfileReload();
+  }
+
+  void _listenProfileReload() {
+    _profileReloadSub = AppEventBus.instance.profileReloadStream.listen((_) {
+      add(const ProfileLoadRequested());
+    });
+  }
+
+  @override
+  Future<void> close() {
+    _profileReloadSub?.cancel();
+    return super.close();
   }
 
   Future<void> _onLoadRequested(

@@ -36,14 +36,18 @@ class TeamInfoModel {
 class CommunityInfoModel {
   final String id;
   final String name;
+  final String? gameName;
+  final String? role;
   final String memberCount;
   final bool isOnline;
 
   const CommunityInfoModel({
     required this.id,
     required this.name,
-    required this.memberCount,
-    required this.isOnline,
+    this.gameName,
+    this.role,
+    this.memberCount = '',
+    this.isOnline = false,
   });
 }
 
@@ -153,6 +157,22 @@ class UserProfileModel {
     final currentTeamJson = json['currentTeam'] as Map<String, dynamic>?;
     final communitiesJson = json['communities'] as List<dynamic>?;
 
+    // Only create TeamInfoModel if currentTeam has valid data (non-empty name/id)
+    TeamInfoModel? parsedTeam;
+    if (currentTeamJson != null) {
+      final teamName = currentTeamJson['name'] as String?;
+      final teamId = currentTeamJson['id'];
+      // Only create team if name or id is not empty/null
+      if ((teamName != null && teamName.isNotEmpty) || teamId != null) {
+        parsedTeam = TeamInfoModel(
+          teamName: teamName ?? '',
+          game: currentTeamJson['gameName'] as String? ?? '',
+          memberCount: (currentTeamJson['memberCount'] as num?)?.toInt() ?? 1,
+          myRole: currentTeamJson['role'] as String? ?? 'Thành viên',
+        );
+      }
+    }
+
     return UserProfileModel(
       id: json['id']?.toString() ?? '',
       email: json['email'] as String? ?? '',
@@ -167,20 +187,15 @@ class UserProfileModel {
               ?.map((e) => UserGameProfileModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      currentTeam: currentTeamJson != null
-          ? TeamInfoModel(
-              teamName: currentTeamJson['name'] as String? ?? '',
-              game: currentTeamJson['gameName'] as String? ?? '',
-              memberCount: 0,
-              myRole: currentTeamJson['role'] as String? ?? '',
-            )
-          : null,
+      currentTeam: parsedTeam,
       communities: communitiesJson
               ?.map((e) {
                 final m = e as Map<String, dynamic>;
                 return CommunityInfoModel(
                   id: m['id']?.toString() ?? '',
                   name: m['name'] as String? ?? '',
+                  gameName: m['gameName'] as String?,
+                  role: m['role'] as String?,
                   memberCount: '0',
                   isOnline: false,
                 );

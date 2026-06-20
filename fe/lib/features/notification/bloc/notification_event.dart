@@ -28,6 +28,28 @@ class NotificationNewReceived extends NotificationEvent {
   List<Object?> get props => [notif];
 }
 
+class NotificationAcceptInvitationRequested extends NotificationEvent {
+  final String notificationId;
+  final String invitationId;
+  const NotificationAcceptInvitationRequested({
+    required this.notificationId,
+    required this.invitationId,
+  });
+  @override
+  List<Object?> get props => [notificationId, invitationId];
+}
+
+class NotificationRejectInvitationRequested extends NotificationEvent {
+  final String notificationId;
+  final String invitationId;
+  const NotificationRejectInvitationRequested({
+    required this.notificationId,
+    required this.invitationId,
+  });
+  @override
+  List<Object?> get props => [notificationId, invitationId];
+}
+
 class NotificationItemModel {
   final String id;
   final String type;

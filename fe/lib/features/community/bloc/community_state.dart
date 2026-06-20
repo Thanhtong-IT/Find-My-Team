@@ -8,6 +8,7 @@ class CommunityState extends Equatable {
   final CommunityStatus status;
   final List<CommunityModel> communities;
   final List<ChannelModel> channels;
+  final bool channelCreating;
   final String? errorMessage;
   final String? successMessage;
 
@@ -15,6 +16,7 @@ class CommunityState extends Equatable {
     this.status = CommunityStatus.initial,
     this.communities = const [],
     this.channels = const [],
+    this.channelCreating = false,
     this.errorMessage,
     this.successMessage,
   });
@@ -23,6 +25,7 @@ class CommunityState extends Equatable {
     CommunityStatus? status,
     List<CommunityModel>? communities,
     List<ChannelModel>? channels,
+    bool? channelCreating,
     String? errorMessage,
     String? successMessage,
   }) {
@@ -30,11 +33,12 @@ class CommunityState extends Equatable {
       status: status ?? this.status,
       communities: communities ?? this.communities,
       channels: channels ?? this.channels,
+      channelCreating: channelCreating ?? this.channelCreating,
       errorMessage: errorMessage,
       successMessage: successMessage,
     );
   }
 
   @override
-  List<Object?> get props => [status, communities, channels, errorMessage, successMessage];
+  List<Object?> get props => [status, communities, channels, channelCreating, errorMessage, successMessage];
 }

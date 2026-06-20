@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../models/community_model.dart';
+import '../models/channel_model.dart';
 
 class CommunityApiService {
   Future<List<CommunityModel>> getCommunities({String? gameId}) async {
@@ -19,6 +20,20 @@ class CommunityApiService {
     final list = json['data'] as List<dynamic>?;
     if (list == null) return [];
     return list.map((e) => CommunityModel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<List<ChannelModel>> getChannels(String communityId) async {
+    final resp = await DioClient.get('${ApiConstants.communities}/$communityId/channels');
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể tải danh sách kênh',
+      );
+    }
+    final list = json['data'] as List<dynamic>?;
+    if (list == null) return [];
+    return list.map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<CommunityModel> createCommunity({
@@ -68,5 +83,27 @@ class CommunityApiService {
         message: json?['message'] as String? ?? 'Không thể rời cộng đồng',
       );
     }
+  }
+
+  Future<ChannelModel> createChannel({
+    required String communityId,
+    required String name,
+    required String type,
+  }) async {
+    final resp = await DioClient.post(
+      '${ApiConstants.communities}/$communityId/channels',
+      data: {
+        'name': name,
+        'type': type,
+      },
+    );
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể tạo kênh',
+      );
+    }
+    return ChannelModel.fromJson(json['data'] as Map<String, dynamic>);
   }
 }

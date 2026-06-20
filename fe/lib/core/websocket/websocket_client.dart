@@ -48,9 +48,23 @@ class WsIncomingEvent {
     required this.data,
     this.eventId,
   });
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is WsIncomingEvent &&
+        other.eventId == eventId &&
+        other.type == type;
+  }
+
+  @override
+  int get hashCode => Object.hash(eventId, type);
 }
 
 typedef WsEventListener = void Function(WsIncomingEvent event);
+
+/// Connection status enum.
+enum WsConnectionStatus { disconnected, connecting, connected, reconnecting }
 
 class WebSocketClient {
   WebSocketClient._();
@@ -62,30 +76,45 @@ class WebSocketClient {
   Timer? _reconnectTimer;
 
   final _eventController = StreamController<WsIncomingEvent>.broadcast();
-  final _connectionController = StreamController<bool>.broadcast();
+  final _statusController = StreamController<WsConnectionStatus>.broadcast();
 
   Stream<WsIncomingEvent> get eventStream => _eventController.stream;
-  Stream<bool> get connectionStream => _connectionController.stream;
+  Stream<WsConnectionStatus> get statusStream => _statusController.stream;
 
-  bool _isConnected = false;
-  bool get isConnected => _isConnected;
+  WsConnectionStatus _status = WsConnectionStatus.disconnected;
+  WsConnectionStatus get status => _status;
+
+  bool get isConnected => _status == WsConnectionStatus.connected;
 
   String? _lastEventId;
   String? _wsUrl;
   String? _token;
 
+  // Subscription tracking - prevent duplicate subscriptions
+  final Set<String> _subscribedRooms = {};
+  // Processed event IDs for deduplication
+  final Set<String> _processedEventIds = {};
+
+  // Exponential backoff config
   static const Duration _heartbeatInterval = Duration(seconds: 30);
-  static const Duration _reconnectDelay = Duration(seconds: 5);
+  static const Duration _initialReconnectDelay = Duration(seconds: 1);
+  static const Duration _maxReconnectDelay = Duration(seconds: 30);
+  static const int _maxReconnectAttempts = 10;
+
+  int _reconnectAttempts = 0;
 
   void connect({required String url, required String token}) {
     _wsUrl = url;
     _token = token;
+    _reconnectAttempts = 0;
     _doConnect();
   }
 
   void _doConnect() {
     if (_wsUrl == null || _token == null || _token!.isEmpty) return;
+
     _reconnectTimer?.cancel();
+    _setStatus(WsConnectionStatus.connecting);
 
     try {
       final uri = Uri.parse('${_wsUrl!}?token=$_token');
@@ -102,10 +131,10 @@ class WebSocketClient {
   }
 
   void _onData(dynamic raw) {
-    if (!_isConnected) {
-      _isConnected = true;
-      _connectionController.add(true);
+    if (_status != WsConnectionStatus.connected) {
+      _setStatus(WsConnectionStatus.connected);
       _startHeartbeat();
+      _resubscribeRooms();
     }
 
     try {
@@ -114,12 +143,8 @@ class WebSocketClient {
       final data = json['data'] as Map<String, dynamic>? ?? {};
       final eventId = json['eventId'] as String?;
 
-      if (op == 'heartbeat_ack') {
-        return; // heartbeat ack — bỏ qua
-      }
-
-      if (op == 'resume_ack') {
-        return; // resume thành công
+      if (op == 'heartbeat_ack' || op == 'resume_ack') {
+        return;
       }
 
       String? eventTypeStr = op;
@@ -136,6 +161,18 @@ class WebSocketClient {
       final type = _parseEventType(eventTypeStr);
 
       if (type != WsEventType.unknown) {
+        // Deduplicate by eventId
+        if (eventId != null) {
+          if (_processedEventIds.contains(eventId)) {
+            return; // Already processed this event
+          }
+          _processedEventIds.add(eventId);
+          // Keep set size bounded
+          if (_processedEventIds.length > 1000) {
+            _processedEventIds.clear();
+          }
+        }
+
         final event = WsIncomingEvent(type: type, data: eventData, eventId: eventId);
         _eventController.add(event);
       }
@@ -197,9 +234,15 @@ class WebSocketClient {
   }
 
   void _setDisconnected() {
-    _isConnected = false;
-    _connectionController.add(false);
     _heartbeatTimer?.cancel();
+    _setStatus(WsConnectionStatus.disconnected);
+  }
+
+  void _setStatus(WsConnectionStatus newStatus) {
+    if (_status != newStatus) {
+      _status = newStatus;
+      _statusController.add(newStatus);
+    }
   }
 
   void _startHeartbeat() {
@@ -210,19 +253,32 @@ class WebSocketClient {
   }
 
   void _scheduleReconnect() {
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+      _setStatus(WsConnectionStatus.disconnected);
+      return;
+    }
+
+    _setStatus(WsConnectionStatus.reconnecting);
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(_reconnectDelay, () {
+
+    // Exponential backoff with jitter
+    final delay = _initialReconnectDelay.inSeconds *
+        (1 << _reconnectAttempts.clamp(0, 5)); // 1, 2, 4, 8, 16, 32s
+    final cappedDelay = Duration(seconds: delay.clamp(1, _maxReconnectDelay.inSeconds));
+
+    _reconnectAttempts++;
+
+    _reconnectTimer = Timer(cappedDelay, () {
       _doConnect();
     });
   }
 
   void _send(Map<String, dynamic> payload) {
-    if (_channel != null && _isConnected) {
+    if (_channel != null && isConnected) {
       _channel!.sink.add(jsonEncode(payload));
     }
   }
 
-  /// Gửi tin nhắn typing indicator.
   void sendTypingStart(String conversationId) {
     _send({
       'op': 'TYPING_START',
@@ -237,7 +293,6 @@ class WebSocketClient {
     });
   }
 
-  /// Gửi lệnh resume để sync event bị lỡ sau khi reconnect.
   void resume() {
     if (_lastEventId != null) {
       _send({
@@ -247,8 +302,14 @@ class WebSocketClient {
     }
   }
 
-  /// Subscribe vào một room
+  /// Subscribe vào một room - tracks subscriptions to prevent duplicates.
   void subscribeRoom(String roomId, String roomType) {
+    final key = '${roomType}_$roomId';
+    if (_subscribedRooms.contains(key)) {
+      return; // Already subscribed
+    }
+
+    _subscribedRooms.add(key);
     _send({
       'op': 'subscribe',
       'data': {
@@ -258,8 +319,10 @@ class WebSocketClient {
     });
   }
 
-  /// Unsubscribe khỏi một room
+  /// Unsubscribe khỏi một room.
   void unsubscribeRoom(String roomId, String roomType) {
+    final key = '${roomType}_$roomId';
+    _subscribedRooms.remove(key);
     _send({
       'op': 'unsubscribe',
       'data': {
@@ -269,22 +332,45 @@ class WebSocketClient {
     });
   }
 
+  /// Resubscribe all rooms after reconnect.
+  void _resubscribeRooms() {
+    for (final key in _subscribedRooms.toList()) {
+      final parts = key.split('_');
+      if (parts.length == 2) {
+        _send({
+          'op': 'subscribe',
+          'data': {
+            'roomId': parts[1],
+            'roomType': parts[0],
+          },
+        });
+      }
+    }
+  }
+
+  /// Check if room is already subscribed.
+  bool isRoomSubscribed(String roomId, String roomType) {
+    return _subscribedRooms.contains('${roomType}_$roomId');
+  }
+
   /// Ngắt kết nối WebSocket (khi logout).
   void disconnect() {
     _heartbeatTimer?.cancel();
     _reconnectTimer?.cancel();
     _channel?.sink.close();
     _channel = null;
-    _isConnected = false;
+    _subscribedRooms.clear();
+    _processedEventIds.clear();
+    _reconnectAttempts = 0;
+    _setStatus(WsConnectionStatus.disconnected);
     _lastEventId = null;
     _wsUrl = null;
     _token = null;
-    _connectionController.add(false);
   }
 
   void dispose() {
     disconnect();
     _eventController.close();
-    _connectionController.close();
+    _statusController.close();
   }
 }

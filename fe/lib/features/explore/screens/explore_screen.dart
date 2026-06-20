@@ -9,6 +9,7 @@ import '../../team/services/team_api_service.dart';
 import '../../team/models/team_model.dart';
 import '../../profile/models/game_model.dart';
 import '../../profile/services/user_api_service.dart';
+import '../../profile/screens/user_profile_screen.dart';
 import '../services/explore_api_service.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -26,13 +27,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
   List<GameModel> _games = [];
   List<TeamModel> _teams = [];
   List<OnlinePlayerModel> _onlinePlayers = [];
+  List<SearchUserModel> _searchResults = [];
   bool _isLoadingGames = true;
   bool _isLoadingTeams = true;
   bool _isLoadingPlayers = true;
+  bool _isSearching = false;
+  bool _hasSearchError = false;
   GameModel? _selectedGameModel;
 
   final ExploreApiService _exploreService = ExploreApiService();
   StreamSubscription? _exploreTeamSub;
+  Timer? _searchDebounce;
 
   List<String> get _gameFilters {
     return ['Tất cả game', ..._games.map((g) => g.name)];
@@ -58,6 +63,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }).toList();
   }
 
+  bool get _isSearchMode => _searchQuery.trim().isNotEmpty;
+
   @override
   void initState() {
     super.initState();
@@ -68,7 +75,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void _listenTeamEvents() {
     _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
       if (!mounted) return;
-      // Reload teams khi có team mới hoặc thay đổi team
       _loadTeams();
     });
   }
@@ -128,10 +134,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
     try {
       List<TeamModel> loadedTeams;
       if (_selectedGameModel == null) {
-        // Tất cả game -> load 5 đội đang tuyển nổi bật
         loadedTeams = await TeamApiService().getRecruitingTeams(limit: 5);
       } else {
-        // Game cụ thể -> load danh sách đội đang mở theo gameId
         loadedTeams = await TeamApiService().getOpenTeams(gameId: _selectedGameModel!.id);
       }
       if (!mounted) return;
@@ -145,6 +149,52 @@ class _ExploreScreenState extends State<ExploreScreen> {
       setState(() {
         _teams = [];
         _isLoadingTeams = false;
+      });
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    setState(() {
+      _searchQuery = value;
+    });
+
+    _searchDebounce?.cancel();
+
+    if (value.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+        _hasSearchError = false;
+      });
+      return;
+    }
+
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () {
+      _performSearch(value);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) return;
+
+    setState(() {
+      _isSearching = true;
+      _hasSearchError = false;
+    });
+
+    try {
+      final results = await _exploreService.searchUsers(query);
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _isSearching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _searchResults = [];
+        _isSearching = false;
+        _hasSearchError = true;
       });
     }
   }
@@ -211,6 +261,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void dispose() {
     _searchController.dispose();
     _exploreTeamSub?.cancel();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -263,83 +314,157 @@ class _ExploreScreenState extends State<ExploreScreen> {
               _ExploreSearchBar(
                 controller: _searchController,
                 isSmallScreen: isSmallScreen,
-                onChanged: (value) => setState(() => _searchQuery = value),
+                onChanged: _onSearchChanged,
               ),
               const SizedBox(height: 16),
-              _isLoadingGames
-                  ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 8), child: CircularProgressIndicator()))
-                  : _GameFilterChips(
-                      filters: _gameFilters,
-                      selected: _selectedGame,
-                      onSelected: (value) {
-                        setState(() {
-                          _selectedGame = value;
-                          if (value == 'Tất cả game') {
-                            _selectedGameModel = null;
-                          } else {
-                            _selectedGameModel = _games.firstWhere((g) => g.name == value);
-                          }
-                        });
-                        _loadTeams();
-                      },
-                    ),
-              const SizedBox(height: 24),
-              _SectionHeader(
-                title: 'Đội đang mở',
-                onViewAll: () {},
-                isSmallScreen: isSmallScreen,
-              ),
-              const SizedBox(height: 12),
-              _isLoadingTeams
-                  ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
-                  : _filteredTeams.isEmpty
-                      ? _EmptyState(message: 'Không có đội nào phù hợp', isSmallScreen: isSmallScreen)
-                      : Column(
-                          children: _filteredTeams
-                              .map((team) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: _TeamOpenCard(
-                                      team: team,
-                                      isSmallScreen: isSmallScreen,
-                                      onJoin: () => _joinTeam(team.id),
-                                      onShare: () => _showSnackBar('Chia sẻ thông tin đội'),
-                                    ),
-                                  ))
-                              .toList(),
-                        ),
-              const SizedBox(height: 8),
-              _SectionHeader(
-                title: 'Người chơi đang online',
-                onViewAll: () {},
-                isSmallScreen: isSmallScreen,
-              ),
-              const SizedBox(height: 12),
-              _isLoadingPlayers
-                  ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
-                  : _filteredPlayers.isEmpty
-                      ? _EmptyState(message: 'Không có người chơi nào phù hợp', isSmallScreen: isSmallScreen)
-                      : Column(
-                          children: _filteredPlayers
-                              .map((player) => Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: _OnlinePlayerCardFromApi(player: player, isSmallScreen: isSmallScreen, onProfile: () {}, onInvite: () {}),
-                                  ))
-                              .toList(),
-                        ),
+              if (!_isSearchMode) ...[
+                _isLoadingGames
+                    ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 8), child: CircularProgressIndicator()))
+                    : _GameFilterChips(
+                        filters: _gameFilters,
+                        selected: _selectedGame,
+                        onSelected: (value) {
+                          setState(() {
+                            _selectedGame = value;
+                            if (value == 'Tất cả game') {
+                              _selectedGameModel = null;
+                            } else {
+                              _selectedGameModel = _games.firstWhere((g) => g.name == value);
+                            }
+                          });
+                          _loadTeams();
+                        },
+                      ),
+                const SizedBox(height: 24),
+                _SectionHeader(
+                  title: 'Đội đang mở',
+                  onViewAll: () {},
+                  isSmallScreen: isSmallScreen,
+                ),
+                const SizedBox(height: 12),
+                _isLoadingTeams
+                    ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
+                    : _filteredTeams.isEmpty
+                        ? _EmptyState(message: 'Không có đội nào phù hợp', isSmallScreen: isSmallScreen)
+                        : Column(
+                            children: _filteredTeams
+                                .map((team) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _TeamOpenCard(
+                                        team: team,
+                                        isSmallScreen: isSmallScreen,
+                                        onJoin: () => _joinTeam(team.id),
+                                        onShare: () => _showSnackBar('Chia sẻ thông tin đội'),
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+                const SizedBox(height: 8),
+                _SectionHeader(
+                  title: 'Người chơi đang online',
+                  onViewAll: () {},
+                  isSmallScreen: isSmallScreen,
+                ),
+                const SizedBox(height: 12),
+                _isLoadingPlayers
+                    ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
+                    : _filteredPlayers.isEmpty
+                        ? _EmptyState(message: 'Không có người chơi nào phù hợp', isSmallScreen: isSmallScreen)
+                        : Column(
+                            children: _filteredPlayers
+                                .map((player) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _OnlinePlayerCardFromApi(
+                                        player: player,
+                                        isSmallScreen: isSmallScreen,
+                                        onProfile: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => UserProfileScreen(userId: player.userId),
+                                            ),
+                                          );
+                                        },
+                                        onInvite: () {},
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+              ] else ...[
+                _SectionHeader(
+                  title: 'Kết quả tìm kiếm',
+                  onViewAll: () {},
+                  isSmallScreen: isSmallScreen,
+                ),
+                const SizedBox(height: 12),
+                _buildSearchResults(isSmallScreen),
+              ],
               const SizedBox(height: 120),
             ],
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GameSelectionScreen())),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.white,
-        elevation: 4,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Tạo yêu cầu tìm đội', style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
+      floatingActionButton: _isSearchMode
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GameSelectionScreen())),
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.white,
+              elevation: 4,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Tạo yêu cầu tìm đội', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+    );
+  }
+
+  Widget _buildSearchResults(bool isSmallScreen) {
+    if (_isSearching) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_hasSearchError) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: _EmptyState(
+          message: 'Đã xảy ra lỗi khi tìm kiếm',
+          isSmallScreen: isSmallScreen,
+          icon: Icons.error_outline_rounded,
+        ),
+      );
+    }
+
+    if (_searchResults.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 24),
+        child: _EmptyState(
+          message: 'Không tìm thấy người dùng nào',
+          isSmallScreen: isSmallScreen,
+        ),
+      );
+    }
+
+    return Column(
+      children: _searchResults
+          .map((user) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _SearchUserCard(
+                  user: user,
+                  isSmallScreen: isSmallScreen,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserProfileScreen(userId: user.id),
+                      ),
+                    );
+                  },
+                ),
+              ))
+          .toList(),
     );
   }
 }
@@ -620,7 +745,9 @@ class _InfoChip extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   final String message;
   final bool isSmallScreen;
-  const _EmptyState({required this.message, required this.isSmallScreen});
+  final IconData? icon;
+
+  const _EmptyState({required this.message, required this.isSmallScreen, this.icon});
 
   @override
   Widget build(BuildContext context) {
@@ -632,7 +759,7 @@ class _EmptyState extends StatelessWidget {
       ),
       child: Column(
         children: [
-          Icon(Icons.search_off_rounded, size: isSmallScreen ? 40 : 48, color: AppColors.textLight),
+          Icon(icon ?? Icons.search_off_rounded, size: isSmallScreen ? 40 : 48, color: AppColors.textLight),
           SizedBox(height: isSmallScreen ? 8 : 12),
           Text(
             message,
@@ -781,6 +908,103 @@ class _OnlinePlayerCardFromApi extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SearchUserCard extends StatelessWidget {
+  final SearchUserModel user;
+  final bool isSmallScreen;
+  final VoidCallback onTap;
+
+  const _SearchUserCard({
+    required this.user,
+    required this.isSmallScreen,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.divider),
+          boxShadow: [
+            BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Row(
+          children: [
+            Stack(
+              children: [
+                CircleAvatar(
+                  radius: isSmallScreen ? 24 : 28,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                  backgroundImage: user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
+                  child: user.avatarUrl == null ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 24 : 28) : null,
+                ),
+                if (user.isOnline)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: isSmallScreen ? 12 : 14,
+                      height: isSmallScreen ? 12 : 14,
+                      decoration: BoxDecoration(
+                        color: AppColors.success,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.white, width: 2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.effectiveDisplayName,
+                    style: TextStyle(
+                      fontSize: isSmallScreen ? 14 : 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '@${user.username}',
+                    style: TextStyle(
+                      fontSize: isSmallScreen ? 11 : 12,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  if (user.bio != null && user.bio!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      user.bio!,
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 11 : 12,
+                        color: AppColors.textLight,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.textLight, size: isSmallScreen ? 20 : 24),
+          ],
+        ),
       ),
     );
   }

@@ -8,6 +8,9 @@ import java.util.UUID;
 @Table(name = "team_members")
 public class TeamMember {
 
+    public static final String STATUS_ACTIVE = "ACTIVE";
+    public static final String STATUS_LEFT = "LEFT";
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
@@ -24,8 +27,14 @@ public class TeamMember {
     @Column(name = "is_ready", nullable = false)
     private boolean isReady = false;
 
+    @Column(name = "status", nullable = false, length = 20)
+    private String status = STATUS_ACTIVE;
+
     @Column(name = "joined_at", nullable = false, updatable = false)
     private OffsetDateTime joinedAt;
+
+    @Column(name = "left_at")
+    private OffsetDateTime leftAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id", insertable = false, updatable = false)
@@ -38,6 +47,10 @@ public class TeamMember {
     @PrePersist
     protected void onCreate() {
         joinedAt = OffsetDateTime.now();
+    }
+
+    public boolean isActive() {
+        return STATUS_ACTIVE.equals(status);
     }
 
     // Getters and Setters
@@ -81,12 +94,28 @@ public class TeamMember {
         isReady = ready;
     }
 
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     public OffsetDateTime getJoinedAt() {
         return joinedAt;
     }
 
     public void setJoinedAt(OffsetDateTime joinedAt) {
         this.joinedAt = joinedAt;
+    }
+
+    public OffsetDateTime getLeftAt() {
+        return leftAt;
+    }
+
+    public void setLeftAt(OffsetDateTime leftAt) {
+        this.leftAt = leftAt;
     }
 
     public Team getTeam() {

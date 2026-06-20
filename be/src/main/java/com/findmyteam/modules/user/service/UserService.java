@@ -4,8 +4,16 @@ import com.findmyteam.common.exception.BusinessException;
 import com.findmyteam.common.exception.ResourceNotFoundException;
 import com.findmyteam.modules.auth.entity.User;
 import com.findmyteam.modules.auth.repository.UserRepository;
+import com.findmyteam.modules.community.entity.Community;
+import com.findmyteam.modules.community.entity.CommunityMember;
+import com.findmyteam.modules.community.repository.CommunityMemberRepository;
+import com.findmyteam.modules.community.repository.CommunityRepository;
 import com.findmyteam.modules.game.entity.Game;
 import com.findmyteam.modules.game.repository.GameRepository;
+import com.findmyteam.modules.team.entity.Team;
+import com.findmyteam.modules.team.entity.TeamMember;
+import com.findmyteam.modules.team.repository.TeamMemberRepository;
+import com.findmyteam.modules.team.repository.TeamRepository;
 import com.findmyteam.modules.user.dto.AddGameProfileRequest;
 import com.findmyteam.modules.user.dto.UpdateProfileRequest;
 import com.findmyteam.modules.user.dto.UserGameProfileResponse;
@@ -17,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Service
 public class UserService {
@@ -24,13 +33,25 @@ public class UserService {
     private final UserRepository userRepository;
     private final UserGameProfileRepository userGameProfileRepository;
     private final GameRepository gameRepository;
+    private final TeamMemberRepository teamMemberRepository;
+    private final TeamRepository teamRepository;
+    private final CommunityMemberRepository communityMemberRepository;
+    private final CommunityRepository communityRepository;
 
     public UserService(UserRepository userRepository,
                       UserGameProfileRepository userGameProfileRepository,
-                      GameRepository gameRepository) {
+                      GameRepository gameRepository,
+                      TeamMemberRepository teamMemberRepository,
+                      TeamRepository teamRepository,
+                      CommunityMemberRepository communityMemberRepository,
+                      CommunityRepository communityRepository) {
         this.userRepository = userRepository;
         this.userGameProfileRepository = userGameProfileRepository;
         this.gameRepository = gameRepository;
+        this.teamMemberRepository = teamMemberRepository;
+        this.teamRepository = teamRepository;
+        this.communityMemberRepository = communityMemberRepository;
+        this.communityRepository = communityRepository;
     }
 
     @Transactional(readOnly = true)
@@ -40,7 +61,44 @@ public class UserService {
 
         List<UserGameProfile> profiles = userGameProfileRepository.findByUserId(userId);
 
-        return UserProfileResponse.from(user, profiles, null);
+        // Find user's active team
+        UserProfileResponse.TeamInfo currentTeam = findUserActiveTeam(userId);
+
+        // Find user's communities
+        List<CommunityMember> userCommunities = communityMemberRepository.findByUserId(userId);
+
+        // Helper functions to get community and game names
+        java.util.function.Function<UUID, String> getCommunityName = (communityId) ->
+            communityRepository.findById(communityId).map(Community::getName).orElse(null);
+        java.util.function.Function<UUID, String> getGameName = (communityId) ->
+            communityRepository.findById(communityId)
+                .map(c -> gameRepository.findById(c.getGameId()).map(Game::getName).orElse(null))
+                .orElse(null);
+
+        return UserProfileResponse.from(user, profiles, currentTeam, userCommunities, getCommunityName, getGameName);
+    }
+
+    private UserProfileResponse.TeamInfo findUserActiveTeam(UUID userId) {
+        // Find any active team membership for this user
+        List<TeamMember> memberships = teamMemberRepository.findByUserId(userId);
+        
+        for (TeamMember member : memberships) {
+            if (TeamMember.STATUS_ACTIVE.equals(member.getStatus())) {
+                // Fetch the team with game info
+                Team team = teamRepository.findById(member.getTeamId()).orElse(null);
+                if (team != null && !"disbanded".equals(team.getStatus())) {
+                    String gameName = team.getGame() != null ? team.getGame().getName() : "Game";
+                    return new UserProfileResponse.TeamInfo(
+                        team.getId(),
+                        team.getName(),
+                        gameName,
+                        member.getRole(),
+                        member.isReady()
+                    );
+                }
+            }
+        }
+        return null;
     }
 
     @Transactional
@@ -65,7 +123,20 @@ public class UserService {
 
         List<UserGameProfile> profiles = userGameProfileRepository.findByUserId(userId);
 
-        return UserProfileResponse.from(user, profiles, null);
+        UserProfileResponse.TeamInfo currentTeam = findUserActiveTeam(userId);
+
+        // Find user's communities
+        List<CommunityMember> userCommunities = communityMemberRepository.findByUserId(userId);
+
+        // Helper functions to get community and game names
+        java.util.function.Function<UUID, String> getCommunityName = (communityId) ->
+            communityRepository.findById(communityId).map(Community::getName).orElse(null);
+        java.util.function.Function<UUID, String> getGameName = (communityId) ->
+            communityRepository.findById(communityId)
+                .map(c -> gameRepository.findById(c.getGameId()).map(Game::getName).orElse(null))
+                .orElse(null);
+
+        return UserProfileResponse.from(user, profiles, currentTeam, userCommunities, getCommunityName, getGameName);
     }
 
     @Transactional
