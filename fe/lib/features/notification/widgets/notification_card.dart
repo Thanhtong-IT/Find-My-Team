@@ -22,7 +22,7 @@ class NotificationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showActions = notification.type == 'team_invite' || notification.type == 'join_request';
+    final showActions = notification.type == 'team_invite';
 
     return GestureDetector(
       onTap: onTap,

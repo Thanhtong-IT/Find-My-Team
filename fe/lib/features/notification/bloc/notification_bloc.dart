@@ -140,12 +140,27 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationAcceptInvitationRequested event,
     Emitter<NotificationState> emit,
   ) async {
+    NotificationItemModel? notification;
+    for (final item in state.notifications) {
+      if (item.id == event.notificationId) {
+        notification = item;
+        break;
+      }
+    }
+
+    if (notification?.type != 'team_invite') {
+      emit(state.copyWith(
+        actionStatus: ActionStatus.error,
+        actionMessage: 'Yêu cầu tham gia chỉ xử lý trong mục Team',
+      ));
+      return;
+    }
+
     emit(state.copyWith(actionStatus: ActionStatus.accepting));
 
     try {
       await _apiService.acceptInvitation(event.invitationId);
 
-      // Remove notification from list
       final updated = state.notifications.where((n) => n.id != event.notificationId).toList();
       emit(state.copyWith(
         actionStatus: ActionStatus.success,
@@ -165,12 +180,27 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationRejectInvitationRequested event,
     Emitter<NotificationState> emit,
   ) async {
+    NotificationItemModel? notification;
+    for (final item in state.notifications) {
+      if (item.id == event.notificationId) {
+        notification = item;
+        break;
+      }
+    }
+
+    if (notification?.type != 'team_invite') {
+      emit(state.copyWith(
+        actionStatus: ActionStatus.error,
+        actionMessage: 'Yêu cầu tham gia chỉ xử lý trong mục Team',
+      ));
+      return;
+    }
+
     emit(state.copyWith(actionStatus: ActionStatus.rejecting));
 
     try {
       await _apiService.rejectInvitation(event.invitationId);
 
-      // Remove notification from list
       final updated = state.notifications.where((n) => n.id != event.notificationId).toList();
       emit(state.copyWith(
         actionStatus: ActionStatus.success,

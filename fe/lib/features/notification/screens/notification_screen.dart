@@ -45,7 +45,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   void _onAccept(NotificationItemModel notif) {
-    if (notif.actionId == null) return;
+    if (notif.type != 'team_invite' || notif.actionId == null) return;
     context.read<NotificationBloc>().add(NotificationAcceptInvitationRequested(
       notificationId: notif.id,
       invitationId: notif.actionId!,
@@ -53,7 +53,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   void _onReject(NotificationItemModel notif) {
-    if (notif.actionId == null) return;
+    if (notif.type != 'team_invite' || notif.actionId == null) return;
     context.read<NotificationBloc>().add(NotificationRejectInvitationRequested(
       notificationId: notif.id,
       invitationId: notif.actionId!,
@@ -239,7 +239,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       itemCount: notifications.length,
       itemBuilder: (context, index) {
         final notif = notifications[index];
-        final showActions = notif.type == 'team_invite' || notif.type == 'join_request';
+        final showActions = notif.type == 'team_invite';
         return NotificationCard(
           notification: notif,
           isSmallScreen: isSmallScreen,
