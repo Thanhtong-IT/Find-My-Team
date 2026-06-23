@@ -38,6 +38,7 @@ dependencies {
 
     // ============ Documentation ============
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.5.0")
+    implementation("software.amazon.awssdk:s3:2.27.21")
 
     // ============ Lombok ============
     compileOnly("org.projectlombok:lombok")
