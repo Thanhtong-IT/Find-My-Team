@@ -55,6 +55,7 @@ class ProfileModel {
   final String id;
   final String displayName;
   final String username;
+  final String? avatarUrl;
   final bool isOnline;
   final GameInfoModel? gameInfo;
   final List<StatModel> stats;
@@ -65,6 +66,7 @@ class ProfileModel {
     required this.id,
     required this.displayName,
     required this.username,
+    this.avatarUrl,
     this.isOnline = false,
     this.gameInfo,
     this.stats = const [],
@@ -74,12 +76,14 @@ class ProfileModel {
 
   ProfileModel copyWith({
     String? displayName,
+    String? avatarUrl,
     GameInfoModel? gameInfo,
   }) {
     return ProfileModel(
       id: id,
       displayName: displayName ?? this.displayName,
       username: username,
+      avatarUrl: avatarUrl ?? this.avatarUrl,
       isOnline: isOnline,
       gameInfo: gameInfo ?? this.gameInfo,
       stats: stats,

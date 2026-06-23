@@ -43,7 +43,15 @@ class ProfileHeader extends StatelessWidget {
                     color: AppColors.white.withValues(alpha: 0.2),
                     border: Border.all(color: AppColors.white.withValues(alpha: 0.5), width: 3),
                   ),
-                  child: const Icon(Icons.person, color: AppColors.white, size: 48),
+                  child: ClipOval(
+                    child: (profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty)
+                        ? Image.network(
+                            profile.avatarUrl!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, color: AppColors.white, size: 48),
+                          )
+                        : const Icon(Icons.person, color: AppColors.white, size: 48),
+                  ),
                 ),
                 Positioned(
                   right: 0,

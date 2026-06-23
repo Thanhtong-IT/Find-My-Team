@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/findmyteam
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:findmyteam}}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
 
   jpa:
     open-in-view: false
@@ -12,13 +12,24 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
 
 jwt:
-  secret: devSecretKeyForLocalDevelopmentOnlyMustBeAtLeast256BitsLongPleaseChangeInProd
+  secret: ${JWT_SECRET:devSecretKeyForLocalDevelopmentOnlyMustBeAtLeast256BitsLongPleaseChangeInProd}
   access-token-expiration: 3600000
   refresh-token-expiration: 604800000
+
+storage:
+  r2:
+    endpoint: ${R2_ENDPOINT:}
+    region: ${R2_REGION:auto}
+    access-key-id: ${R2_ACCESS_KEY_ID:}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+    bucket: ${R2_BUCKET:}
+    public-base-url: ${R2_PUBLIC_BASE_URL:}
+    presign-ttl-seconds: ${R2_PRESIGN_TTL_SECONDS:300}
 
 logging:
   level:

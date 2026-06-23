@@ -18,6 +18,7 @@ class ApiConstants {
   static const String popularGames = '/games/popular';
   static const String userProfile = '/users/me/profile';
   static const String userProfileById = '/users/{userId}/profile';
+  static const String avatarUploadUrl = '/users/me/avatar-upload-url';
   static const String userGameProfiles = '/users/me/game-profiles';
   static const String addGameProfile = '/users/me/game-profile';
 

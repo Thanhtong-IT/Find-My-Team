@@ -13,6 +13,29 @@ class UserApiException implements Exception {
   String toString() => message;
 }
 
+class AvatarUploadTarget {
+  final String uploadUrl;
+  final String publicUrl;
+  final String objectKey;
+  final int expiresInSeconds;
+
+  const AvatarUploadTarget({
+    required this.uploadUrl,
+    required this.publicUrl,
+    required this.objectKey,
+    required this.expiresInSeconds,
+  });
+
+  factory AvatarUploadTarget.fromJson(Map<String, dynamic> json) {
+    return AvatarUploadTarget(
+      uploadUrl: json['uploadUrl'] as String? ?? '',
+      publicUrl: json['publicUrl'] as String? ?? '',
+      objectKey: json['objectKey'] as String? ?? '',
+      expiresInSeconds: (json['expiresInSeconds'] as num?)?.toInt() ?? 300,
+    );
+  }
+}
+
 class UserSearchResult {
   final String id;
   final String username;
@@ -83,6 +106,45 @@ class UserApiService {
       );
     }
     return UserProfileModel.fromJson(json['data'] as Map<String, dynamic>? ?? {});
+  }
+
+  Future<AvatarUploadTarget> createAvatarUploadUrl(String contentType) async {
+    final resp = await DioClient.post(
+      ApiConstants.avatarUploadUrl,
+      data: {'contentType': contentType},
+    );
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể tạo URL upload avatar',
+      );
+    }
+    return AvatarUploadTarget.fromJson(json['data'] as Map<String, dynamic>? ?? {});
+  }
+
+  Future<void> uploadAvatarToPresignedUrl({
+    required String uploadUrl,
+    required String contentType,
+    required List<int> bytes,
+  }) async {
+    final dio = Dio(BaseOptions(
+      headers: {'Content-Type': contentType, 'Accept': '*/*'},
+      followRedirects: false,
+      validateStatus: (status) => status != null && status < 500,
+    ));
+    final response = await dio.put(
+      uploadUrl,
+      data: bytes,
+      options: Options(headers: {'Content-Type': contentType}),
+    );
+    if (response.statusCode == null || response.statusCode! < 200 || response.statusCode! >= 300) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        message: 'Không thể tải avatar lên R2',
+        response: response,
+      );
+    }
   }
 
   Future<void> updateProfile({

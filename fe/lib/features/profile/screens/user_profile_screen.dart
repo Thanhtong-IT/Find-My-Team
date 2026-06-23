@@ -165,6 +165,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       id: _profile!.id,
       displayName: _profile!.displayName ?? _profile!.username,
       username: '@${_profile!.username}',
+      avatarUrl: _profile!.avatarUrl,
       isOnline: _profile!.isOnline,
       gameInfo: gameInfo,
       stats: stats,

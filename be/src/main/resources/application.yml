@@ -4,6 +4,10 @@ server:
     context-path: /
 
 spring:
+  config:
+    import: optional:file:.env[.properties]
+  profiles:
+    default: local
   application:
     name: find-my-team-backend
 
@@ -63,6 +67,16 @@ jwt:
 
 riot:
   api-key: RGAPI-280f123d-5be8-448d-a643-dd8df6901137
+
+storage:
+  r2:
+    endpoint: ${R2_ENDPOINT:}
+    region: ${R2_REGION:auto}
+    access-key-id: ${R2_ACCESS_KEY_ID:}
+    secret-access-key: ${R2_SECRET_ACCESS_KEY:}
+    bucket: ${R2_BUCKET:}
+    public-base-url: ${R2_PUBLIC_BASE_URL:}
+    presign-ttl-seconds: ${R2_PRESIGN_TTL_SECONDS:300}
 
 springdoc:
   api-docs:

@@ -3,11 +3,14 @@ package com.findmyteam.modules.user.controller;
 import com.findmyteam.common.dto.ApiResponse;
 import com.findmyteam.modules.auth.entity.User;
 import com.findmyteam.modules.user.dto.AddGameProfileRequest;
+import com.findmyteam.modules.user.dto.AvatarUploadUrlRequest;
+import com.findmyteam.modules.user.dto.AvatarUploadUrlResponse;
 import com.findmyteam.modules.user.dto.UpdateGameProfilesRequest;
 import com.findmyteam.modules.user.dto.UpdateProfileRequest;
 import com.findmyteam.modules.user.dto.UserGameProfileResponse;
 import com.findmyteam.modules.user.dto.UserProfileResponse;
 import com.findmyteam.modules.user.dto.VerifyRiotAccountRequest;
+import com.findmyteam.modules.user.service.R2AvatarStorageService;
 import com.findmyteam.modules.user.service.UserService;
 import com.findmyteam.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
@@ -25,9 +28,11 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final R2AvatarStorageService r2AvatarStorageService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, R2AvatarStorageService r2AvatarStorageService) {
         this.userService = userService;
+        this.r2AvatarStorageService = r2AvatarStorageService;
     }
 
     @Operation(summary = "Lấy thông tin user hiện tại")
@@ -48,6 +53,14 @@ public class UserController {
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.success(userService.updateProfile(principal.getId(), request));
+    }
+
+    @Operation(summary = "Tạo URL upload avatar lên R2")
+    @PostMapping("/me/avatar-upload-url")
+    public ApiResponse<AvatarUploadUrlResponse> createAvatarUploadUrl(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody AvatarUploadUrlRequest request) {
+        return ApiResponse.success(r2AvatarStorageService.createAvatarUploadUrl(principal.getId(), request.contentType()));
     }
 
     @Operation(summary = "Lưu danh sách game profile của user hiện tại")

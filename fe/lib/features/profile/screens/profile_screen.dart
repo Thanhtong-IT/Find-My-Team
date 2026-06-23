@@ -1,9 +1,12 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/constants.dart';
 import '../data/profile_repository.dart';
 import '../models/game_model.dart';
 import '../models/profile_model.dart';
+import '../services/user_api_service.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/profile_stat_card.dart';
 import '../../notification/screens/notification_screen.dart';
@@ -120,6 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             id: userProfile.id,
             displayName: userProfile.displayName ?? userProfile.username,
             username: '@${userProfile.username}',
+            avatarUrl: userProfile.avatarUrl,
             isOnline: userProfile.isOnline,
             gameInfo: gameInfo,
             stats: stats,
@@ -630,11 +634,16 @@ class _EditProfileSheet extends StatefulWidget {
 }
 
 class _EditProfileSheetState extends State<_EditProfileSheet> {
+  final _userApiService = UserApiService();
   late final TextEditingController _nameController;
   late final TextEditingController _bioController;
   late final TextEditingController _regionController;
   late final List<GameModel> _gameOptions;
   late List<_GameProfileDraft> _drafts;
+  final _imagePicker = ImagePicker();
+  Uint8List? _avatarBytes;
+  String? _avatarMimeType;
+  String? _avatarPreviewUrl;
   bool _isSubmitting = false;
   bool _closeOnSuccess = false;
 
@@ -644,6 +653,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     _nameController = TextEditingController(text: widget.profile.displayName ?? '');
     _bioController = TextEditingController(text: widget.profile.bio ?? '');
     _regionController = TextEditingController(text: widget.profile.region ?? '');
+    _avatarPreviewUrl = widget.profile.avatarUrl;
     _gameOptions = _mergeGames(widget.games, widget.profile.gameProfiles);
     _drafts = widget.profile.gameProfiles.map(_GameProfileDraft.fromModel).toList();
     if (_drafts.isEmpty && _gameOptions.isNotEmpty) {
@@ -697,6 +707,91 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     );
   }
 
+  Future<void> _pickAvatar() async {
+    if (_isSubmitting) return;
+    final result = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+    if (result == null) return;
+
+    final bytes = await result.readAsBytes();
+    final mimeType = _mimeTypeForPickedFile(result, bytes);
+    if (mimeType == null) {
+      _showSnackBar('Chỉ hỗ trợ ảnh jpg, png hoặc webp', isError: true);
+      return;
+    }
+
+    setState(() {
+      _avatarBytes = bytes;
+      _avatarMimeType = mimeType;
+      _avatarPreviewUrl = null;
+    });
+  }
+
+  String? _mimeTypeForPickedFile(XFile file, Uint8List bytes) {
+    final fromPicker = _normalizeImageMimeType(file.mimeType);
+    if (fromPicker != null) return fromPicker;
+
+    final fromName = _mimeTypeForFileName(file.name);
+    if (fromName != null) return fromName;
+
+    final fromPath = _mimeTypeForFileName(file.path);
+    if (fromPath != null) return fromPath;
+
+    return _mimeTypeFromBytes(bytes);
+  }
+
+  String? _normalizeImageMimeType(String? mimeType) {
+    final normalized = mimeType?.trim().toLowerCase();
+    switch (normalized) {
+      case 'image/jpeg':
+      case 'image/jpg':
+      case 'image/pjpeg':
+        return 'image/jpeg';
+      case 'image/png':
+        return 'image/png';
+      case 'image/webp':
+        return 'image/webp';
+      default:
+        return null;
+    }
+  }
+
+  String? _mimeTypeForFileName(String fileName) {
+    final lower = fileName.toLowerCase().split('?').first;
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    return null;
+  }
+
+  String? _mimeTypeFromBytes(Uint8List bytes) {
+    if (bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+      return 'image/jpeg';
+    }
+    if (bytes.length >= 8 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47 &&
+        bytes[4] == 0x0D &&
+        bytes[5] == 0x0A &&
+        bytes[6] == 0x1A &&
+        bytes[7] == 0x0A) {
+      return 'image/png';
+    }
+    if (bytes.length >= 12 &&
+        bytes[0] == 0x52 &&
+        bytes[1] == 0x49 &&
+        bytes[2] == 0x46 &&
+        bytes[3] == 0x46 &&
+        bytes[8] == 0x57 &&
+        bytes[9] == 0x45 &&
+        bytes[10] == 0x42 &&
+        bytes[11] == 0x50) {
+      return 'image/webp';
+    }
+    return null;
+  }
+
   void _syncDraftsFromProfile(UserProfileModel profile) {
     setState(() {
       _drafts = profile.gameProfiles.map(_GameProfileDraft.fromModel).toList();
@@ -741,7 +836,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     });
   }
 
-  void _save() {
+  Future<void> _save() async {
     final displayName = _nameController.text.trim();
     if (displayName.isEmpty) {
       _showSnackBar('Tên hiển thị không được để trống', isError: true);
@@ -758,14 +853,38 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       _closeOnSuccess = true;
     });
 
-    context.read<ProfileBloc>().add(
-      ProfileUpdateRequested(
-        displayName: displayName,
-        bio: _bioController.text.trim(),
-        region: _regionController.text.trim(),
-        gameProfiles: filtered,
-      ),
-    );
+    final profileBloc = context.read<ProfileBloc>();
+
+    try {
+      String? avatarUrl = widget.profile.avatarUrl;
+      if (_avatarBytes != null && _avatarMimeType != null) {
+        final uploadTarget = await _userApiService.createAvatarUploadUrl(_avatarMimeType!);
+        await _userApiService.uploadAvatarToPresignedUrl(
+          uploadUrl: uploadTarget.uploadUrl,
+          contentType: _avatarMimeType!,
+          bytes: _avatarBytes!,
+        );
+        avatarUrl = uploadTarget.publicUrl;
+      }
+
+      if (!mounted) return;
+      profileBloc.add(
+        ProfileUpdateRequested(
+          displayName: displayName,
+          avatarUrl: avatarUrl,
+          bio: _bioController.text.trim(),
+          region: _regionController.text.trim(),
+          gameProfiles: filtered,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _closeOnSuccess = false;
+      });
+      _showSnackBar('$e', isError: true);
+    }
   }
 
   void _verifyRiot(int index) {
@@ -882,6 +1001,8 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   const SizedBox(height: 8),
                   const Text('Thông tin cá nhân', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                   const SizedBox(height: 12),
+                  _buildAvatarPicker(),
+                  const SizedBox(height: 12),
                   _buildTextField('Tên hiển thị', _nameController, 'Nhập tên hiển thị của bạn', enabled: !_isSubmitting),
                   const SizedBox(height: 12),
                   _buildTextField('Bio', _bioController, 'Mô tả ngắn về bạn', maxLines: 3, enabled: !_isSubmitting),
@@ -947,6 +1068,44 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatarPicker() {
+    return Center(
+      child: GestureDetector(
+        onTap: _isSubmitting ? null : _pickAvatar,
+        child: Stack(
+          children: [
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const LinearGradient(colors: [AppColors.secondary, AppColors.primary], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: ClipOval(
+                child: _avatarBytes != null
+                    ? Image.memory(_avatarBytes!, fit: BoxFit.cover)
+                    : (_avatarPreviewUrl != null && _avatarPreviewUrl!.isNotEmpty)
+                        ? Image.network(_avatarPreviewUrl!, fit: BoxFit.cover, errorBuilder: (context, error, stackTrace) => const Icon(Icons.person, size: 48, color: AppColors.white))
+                        : const Icon(Icons.person, size: 48, color: AppColors.white),
+              ),
+            ),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle, border: Border.all(color: AppColors.white, width: 2)),
+                child: const Icon(Icons.camera_alt, size: 16, color: AppColors.white),
+              ),
+            ),
+          ],
         ),
       ),
     );
