@@ -16,6 +16,8 @@ public interface UserGameProfileRepository extends JpaRepository<UserGameProfile
 
     Optional<UserGameProfile> findByUserIdAndGameId(UUID userId, UUID gameId);
 
+    Optional<UserGameProfile> findByIdAndUserId(UUID id, UUID userId);
+
     @Query("SELECT ugp FROM UserGameProfile ugp WHERE ugp.userId = :userId AND ugp.isPrimary = true")
     Optional<UserGameProfile> findPrimaryByUserId(UUID userId);
 

@@ -25,7 +25,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   bool _isSearching = false;
   bool _isSending = false;
   String? _currentUserId;
-  Set<String> _sentInvitations = {};
+  final Set<String> _sentInvitations = {};
 
   @override
   void initState() {
@@ -120,7 +120,11 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
         ),
         title: const Text(
           'Mời thành viên',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
         ),
         centerTitle: true,
       ),
@@ -146,7 +150,10 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
                   decoration: InputDecoration(
                     hintText: 'Tìm kiếm người dùng...',
                     hintStyle: TextStyle(color: AppColors.textLight),
-                    prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+                    prefixIcon: const Icon(
+                      Icons.search,
+                      color: AppColors.textSecondary,
+                    ),
                     suffixIcon: _searchController.text.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
@@ -173,9 +180,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Expanded(
-            child: _buildResultsList(isSmallScreen),
-          ),
+          Expanded(child: _buildResultsList(isSmallScreen)),
         ],
       ),
     );
@@ -191,16 +196,26 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.search_rounded, size: isSmallScreen ? 60 : 72, color: AppColors.textLight),
+            Icon(
+              Icons.search_rounded,
+              size: isSmallScreen ? 60 : 72,
+              color: AppColors.textLight,
+            ),
             const SizedBox(height: 16),
             Text(
               'Tìm kiếm người dùng để mời',
-              style: TextStyle(fontSize: isSmallScreen ? 14 : 16, color: AppColors.textSecondary),
+              style: TextStyle(
+                fontSize: isSmallScreen ? 14 : 16,
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Nhập tên hoặc username',
-              style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textLight),
+              style: TextStyle(
+                fontSize: isSmallScreen ? 12 : 13,
+                color: AppColors.textLight,
+              ),
             ),
           ],
         ),
@@ -212,16 +227,26 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.person_off_rounded, size: isSmallScreen ? 60 : 72, color: AppColors.textLight),
+            Icon(
+              Icons.person_off_rounded,
+              size: isSmallScreen ? 60 : 72,
+              color: AppColors.textLight,
+            ),
             const SizedBox(height: 16),
             Text(
               'Không tìm thấy người dùng',
-              style: TextStyle(fontSize: isSmallScreen ? 14 : 16, color: AppColors.textSecondary),
+              style: TextStyle(
+                fontSize: isSmallScreen ? 14 : 16,
+                color: AppColors.textSecondary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               'Thử từ khóa khác',
-              style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textLight),
+              style: TextStyle(
+                fontSize: isSmallScreen ? 12 : 13,
+                color: AppColors.textLight,
+              ),
             ),
           ],
         ),
@@ -279,9 +304,15 @@ class _UserSearchCard extends StatelessWidget {
           CircleAvatar(
             radius: isSmallScreen ? 22 : 26,
             backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-            backgroundImage: user.avatarUrl != null ? NetworkImage(user.avatarUrl!) : null,
+            backgroundImage: user.avatarUrl != null
+                ? NetworkImage(user.avatarUrl!)
+                : null,
             child: user.avatarUrl == null
-                ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
+                ? Icon(
+                    Icons.person,
+                    color: AppColors.primary,
+                    size: isSmallScreen ? 22 : 26,
+                  )
                 : null,
           ),
           const SizedBox(width: 12),
@@ -310,7 +341,10 @@ class _UserSearchCard extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(6),
@@ -344,7 +378,11 @@ class _UserSearchCard extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.check, size: isSmallScreen ? 14 : 16, color: AppColors.success),
+                  Icon(
+                    Icons.check,
+                    size: isSmallScreen ? 14 : 16,
+                    color: AppColors.success,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'Đã gửi',
@@ -366,8 +404,12 @@ class _UserSearchCard extends StatelessWidget {
                   backgroundColor: AppColors.primary,
                   foregroundColor: AppColors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 12 : 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isSmallScreen ? 12 : 16,
+                  ),
                 ),
                 child: isSending
                     ? SizedBox(

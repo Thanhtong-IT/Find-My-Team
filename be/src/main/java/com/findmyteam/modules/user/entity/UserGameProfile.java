@@ -1,6 +1,7 @@
 package com.findmyteam.modules.user.entity;
 
 import jakarta.persistence.*;
+
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -21,6 +22,13 @@ public class UserGameProfile {
     @Column(name = "rank", length = 50)
     private String rank;
 
+    @Column(name = "verified_rank", length = 50)
+    private String verifiedRank;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "rank_source", nullable = false, length = 20)
+    private RankSource rankSource = RankSource.MANUAL;
+
     @Column(name = "role", length = 50)
     private String role;
 
@@ -29,6 +37,28 @@ public class UserGameProfile {
 
     @Column(name = "is_primary", nullable = false)
     private boolean isPrimary = false;
+
+    @Column(name = "riot_game_name", length = 100)
+    private String riotGameName;
+
+    @Column(name = "riot_tag_line", length = 20)
+    private String riotTagLine;
+
+    @Column(name = "riot_puuid", length = 100)
+    private String riotPuuid;
+
+    @Column(name = "riot_region", length = 20)
+    private String riotRegion;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "riot_verification_status", nullable = false, length = 20)
+    private RiotVerificationStatus riotVerificationStatus = RiotVerificationStatus.UNVERIFIED;
+
+    @Column(name = "riot_verified_at")
+    private OffsetDateTime riotVerifiedAt;
+
+    @Column(name = "riot_profile_last_synced_at")
+    private OffsetDateTime riotProfileLastSyncedAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
@@ -55,7 +85,6 @@ public class UserGameProfile {
         updatedAt = OffsetDateTime.now();
     }
 
-    // Getters and Setters
     public UUID getId() {
         return id;
     }
@@ -88,6 +117,22 @@ public class UserGameProfile {
         this.rank = rank;
     }
 
+    public String getVerifiedRank() {
+        return verifiedRank;
+    }
+
+    public void setVerifiedRank(String verifiedRank) {
+        this.verifiedRank = verifiedRank;
+    }
+
+    public RankSource getRankSource() {
+        return rankSource;
+    }
+
+    public void setRankSource(RankSource rankSource) {
+        this.rankSource = rankSource;
+    }
+
     public String getRole() {
         return role;
     }
@@ -110,6 +155,62 @@ public class UserGameProfile {
 
     public void setPrimary(boolean primary) {
         isPrimary = primary;
+    }
+
+    public String getRiotGameName() {
+        return riotGameName;
+    }
+
+    public void setRiotGameName(String riotGameName) {
+        this.riotGameName = riotGameName;
+    }
+
+    public String getRiotTagLine() {
+        return riotTagLine;
+    }
+
+    public void setRiotTagLine(String riotTagLine) {
+        this.riotTagLine = riotTagLine;
+    }
+
+    public String getRiotPuuid() {
+        return riotPuuid;
+    }
+
+    public void setRiotPuuid(String riotPuuid) {
+        this.riotPuuid = riotPuuid;
+    }
+
+    public String getRiotRegion() {
+        return riotRegion;
+    }
+
+    public void setRiotRegion(String riotRegion) {
+        this.riotRegion = riotRegion;
+    }
+
+    public RiotVerificationStatus getRiotVerificationStatus() {
+        return riotVerificationStatus;
+    }
+
+    public void setRiotVerificationStatus(RiotVerificationStatus riotVerificationStatus) {
+        this.riotVerificationStatus = riotVerificationStatus;
+    }
+
+    public OffsetDateTime getRiotVerifiedAt() {
+        return riotVerifiedAt;
+    }
+
+    public void setRiotVerifiedAt(OffsetDateTime riotVerifiedAt) {
+        this.riotVerifiedAt = riotVerifiedAt;
+    }
+
+    public OffsetDateTime getRiotProfileLastSyncedAt() {
+        return riotProfileLastSyncedAt;
+    }
+
+    public void setRiotProfileLastSyncedAt(OffsetDateTime riotProfileLastSyncedAt) {
+        this.riotProfileLastSyncedAt = riotProfileLastSyncedAt;
     }
 
     public OffsetDateTime getCreatedAt() {

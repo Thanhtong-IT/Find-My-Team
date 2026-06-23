@@ -74,7 +74,6 @@ class ProfileModel {
 
   ProfileModel copyWith({
     String? displayName,
-    String? avatarUrl,
     GameInfoModel? gameInfo,
   }) {
     return ProfileModel(
@@ -95,8 +94,18 @@ class UserGameProfileModel {
   final String gameId;
   final String? gameName;
   final String? rank;
+  final String? verifiedRank;
+  final String? rankSource;
   final String? role;
   final bool hasMic;
+  final bool isPrimary;
+  final String? riotGameName;
+  final String? riotTagLine;
+  final String? riotRegion;
+  final String? riotVerificationStatus;
+  final bool riotVerified;
+  final DateTime? riotVerifiedAt;
+  final DateTime? riotProfileLastSyncedAt;
   final DateTime createdAt;
 
   const UserGameProfileModel({
@@ -104,10 +113,33 @@ class UserGameProfileModel {
     required this.gameId,
     this.gameName,
     this.rank,
+    this.verifiedRank,
+    this.rankSource,
     this.role,
     this.hasMic = false,
+    this.isPrimary = false,
+    this.riotGameName,
+    this.riotTagLine,
+    this.riotRegion,
+    this.riotVerificationStatus,
+    this.riotVerified = false,
+    this.riotVerifiedAt,
+    this.riotProfileLastSyncedAt,
     required this.createdAt,
   });
+
+  bool get usesVerifiedRank => (rankSource ?? '').toUpperCase() == 'RIOT';
+
+  String? get displayRank => verifiedRank ?? rank;
+
+  String? get riotIdDisplay {
+    final gameName = riotGameName?.trim();
+    final tagLine = riotTagLine?.trim();
+    if (gameName == null || gameName.isEmpty || tagLine == null || tagLine.isEmpty) {
+      return null;
+    }
+    return '$gameName#$tagLine';
+  }
 
   factory UserGameProfileModel.fromJson(Map<String, dynamic> json) {
     return UserGameProfileModel(
@@ -115,12 +147,66 @@ class UserGameProfileModel {
       gameId: json['gameId']?.toString() ?? '',
       gameName: json['gameName'] as String?,
       rank: json['rank'] as String?,
+      verifiedRank: json['verifiedRank'] as String?,
+      rankSource: json['rankSource'] as String?,
       role: json['role'] as String?,
       hasMic: json['hasMic'] as bool? ?? false,
+      isPrimary: json['isPrimary'] as bool? ?? false,
+      riotGameName: json['riotGameName'] as String?,
+      riotTagLine: json['riotTagLine'] as String?,
+      riotRegion: json['riotRegion'] as String?,
+      riotVerificationStatus: json['riotVerificationStatus'] as String?,
+      riotVerified: json['riotVerified'] as bool? ?? false,
+      riotVerifiedAt: json['riotVerifiedAt'] != null
+          ? DateTime.tryParse(json['riotVerifiedAt'] as String)
+          : null,
+      riotProfileLastSyncedAt: json['riotProfileLastSyncedAt'] != null
+          ? DateTime.tryParse(json['riotProfileLastSyncedAt'] as String)
+          : null,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
           : DateTime.now(),
     );
+  }
+}
+
+class GameProfileUpdateItem {
+  final String? id;
+  final String gameId;
+  final String? rank;
+  final String? role;
+  final bool hasMic;
+  final bool isPrimary;
+
+  const GameProfileUpdateItem({
+    this.id,
+    required this.gameId,
+    this.rank,
+    this.role,
+    this.hasMic = false,
+    this.isPrimary = false,
+  });
+
+  factory GameProfileUpdateItem.fromModel(UserGameProfileModel model) {
+    return GameProfileUpdateItem(
+      id: model.id,
+      gameId: model.gameId,
+      rank: model.rank,
+      role: model.role,
+      hasMic: model.hasMic,
+      isPrimary: model.isPrimary,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      if (id != null) 'id': id,
+      'gameId': gameId,
+      'rank': rank,
+      'role': role,
+      'hasMic': hasMic,
+      'isPrimary': isPrimary,
+    };
   }
 }
 
@@ -157,12 +243,10 @@ class UserProfileModel {
     final currentTeamJson = json['currentTeam'] as Map<String, dynamic>?;
     final communitiesJson = json['communities'] as List<dynamic>?;
 
-    // Only create TeamInfoModel if currentTeam has valid data (non-empty name/id)
     TeamInfoModel? parsedTeam;
     if (currentTeamJson != null) {
       final teamName = currentTeamJson['name'] as String?;
       final teamId = currentTeamJson['id'];
-      // Only create team if name or id is not empty/null
       if ((teamName != null && teamName.isNotEmpty) || teamId != null) {
         parsedTeam = TeamInfoModel(
           teamName: teamName ?? '',

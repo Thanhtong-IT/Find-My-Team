@@ -14,6 +14,9 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
         super(const ProfileState()) {
     on<ProfileLoadRequested>(_onLoadRequested);
     on<ProfileUpdateRequested>(_onUpdateRequested);
+    on<RiotAccountVerifyRequested>(_onVerifyRiotAccountRequested);
+    on<RiotAccountRefreshRequested>(_onRefreshRiotAccountRequested);
+    on<RiotAccountUnlinkRequested>(_onUnlinkRiotAccountRequested);
     on<GameProfileAddRequested>(_onAddGameProfile);
     on<GameProfileDeleteRequested>(_onDeleteGameProfile);
     on<PopularGamesLoadRequested>(_onLoadPopularGames);
@@ -57,7 +60,33 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     try {
       await _userApiService.updateProfile(
         displayName: event.displayName,
+        avatarUrl: event.avatarUrl,
         bio: event.bio,
+        region: event.region,
+      );
+      if (event.gameProfiles != null) {
+        await _userApiService.updateGameProfiles(event.gameProfiles!);
+      }
+      final profile = await _userApiService.getMyProfile();
+      emit(state.copyWith(status: ProfileStatus.success, profile: profile));
+    } catch (e) {
+      emit(state.copyWith(
+        status: ProfileStatus.error,
+        errorMessage: 'Không thể cập nhật hồ sơ: $e',
+      ));
+    }
+  }
+
+  Future<void> _onVerifyRiotAccountRequested(
+    RiotAccountVerifyRequested event,
+    Emitter<ProfileState> emit,
+  ) async {
+    emit(state.copyWith(status: ProfileStatus.loading));
+    try {
+      await _userApiService.verifyRiotAccount(
+        profileId: event.profileId,
+        riotGameName: event.riotGameName,
+        riotTagLine: event.riotTagLine,
         region: event.region,
       );
       final profile = await _userApiService.getMyProfile();
@@ -65,7 +94,41 @@ class ProfileBloc extends Bloc<ProfileEvent, ProfileState> {
     } catch (e) {
       emit(state.copyWith(
         status: ProfileStatus.error,
-        errorMessage: 'Không thể cập nhật hồ sơ: $e',
+        errorMessage: 'Không thể xác thực Riot account: $e',
+      ));
+    }
+  }
+
+  Future<void> _onRefreshRiotAccountRequested(
+    RiotAccountRefreshRequested event,
+    Emitter<ProfileState> emit,
+  ) async {
+    emit(state.copyWith(status: ProfileStatus.loading));
+    try {
+      await _userApiService.refreshRiotAccount(event.profileId);
+      final profile = await _userApiService.getMyProfile();
+      emit(state.copyWith(status: ProfileStatus.success, profile: profile));
+    } catch (e) {
+      emit(state.copyWith(
+        status: ProfileStatus.error,
+        errorMessage: 'Không thể đồng bộ Riot account: $e',
+      ));
+    }
+  }
+
+  Future<void> _onUnlinkRiotAccountRequested(
+    RiotAccountUnlinkRequested event,
+    Emitter<ProfileState> emit,
+  ) async {
+    emit(state.copyWith(status: ProfileStatus.loading));
+    try {
+      await _userApiService.unlinkRiotAccount(event.profileId);
+      final profile = await _userApiService.getMyProfile();
+      emit(state.copyWith(status: ProfileStatus.success, profile: profile));
+    } catch (e) {
+      emit(state.copyWith(
+        status: ProfileStatus.error,
+        errorMessage: 'Không thể gỡ liên kết Riot account: $e',
       ));
     }
   }

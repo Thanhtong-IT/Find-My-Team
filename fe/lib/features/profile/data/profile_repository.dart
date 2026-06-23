@@ -28,11 +28,10 @@ class ProfileRepository {
     return _currentProfile!;
   }
 
-  void updateProfile({String? displayName, String? avatarUrl, GameInfoModel? gameInfo}) {
+  void updateProfile({String? displayName, GameInfoModel? gameInfo}) {
     final current = getMyProfile();
     _currentProfile = current.copyWith(
       displayName: displayName,
-      avatarUrl: avatarUrl,
       gameInfo: gameInfo,
     );
   }

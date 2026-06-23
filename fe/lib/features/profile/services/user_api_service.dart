@@ -4,6 +4,15 @@ import '../../../core/constants/api_constants.dart';
 import '../models/profile_model.dart';
 import '../models/game_model.dart';
 
+class UserApiException implements Exception {
+  final String message;
+
+  const UserApiException(this.message);
+
+  @override
+  String toString() => message;
+}
+
 class UserSearchResult {
   final String id;
   final String username;
@@ -78,11 +87,13 @@ class UserApiService {
 
   Future<void> updateProfile({
     String? displayName,
+    String? avatarUrl,
     String? bio,
     String? region,
   }) async {
     final data = <String, dynamic>{};
     if (displayName != null) data['displayName'] = displayName;
+    if (avatarUrl != null) data['avatarUrl'] = avatarUrl;
     if (bio != null) data['bio'] = bio;
     if (region != null) data['region'] = region;
 
@@ -93,6 +104,70 @@ class UserApiService {
         requestOptions: resp.requestOptions,
         message: json?['message'] as String? ?? 'Không thể cập nhật profile',
       );
+    }
+  }
+
+  Future<void> updateGameProfiles(List<GameProfileUpdateItem> profiles) async {
+    final resp = await DioClient.put(
+      ApiConstants.userGameProfiles,
+      data: {
+        'profiles': profiles.map((profile) => profile.toJson()).toList(),
+      },
+    );
+    final json = resp.data as Map<String, dynamic>?;
+    if (json == null || json['success'] != true) {
+      throw DioException(
+        requestOptions: resp.requestOptions,
+        message: json?['message'] as String? ?? 'Không thể cập nhật game profile',
+      );
+    }
+  }
+
+  Future<void> verifyRiotAccount({
+    required String profileId,
+    required String riotGameName,
+    required String riotTagLine,
+    required String region,
+  }) async {
+    try {
+      final resp = await DioClient.post(
+        '${ApiConstants.addGameProfile}/$profileId/riot/verify',
+        data: {
+          'riotGameName': riotGameName,
+          'riotTagLine': riotTagLine,
+          'region': region,
+        },
+      );
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw UserApiException(json?['message'] as String? ?? 'Không thể xác thực Riot account');
+      }
+    } on DioException catch (e) {
+      throw UserApiException(_extractErrorMessage(e, 'Không thể xác thực Riot account'));
+    }
+  }
+
+  Future<void> refreshRiotAccount(String profileId) async {
+    try {
+      final resp = await DioClient.post('${ApiConstants.addGameProfile}/$profileId/riot/refresh');
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw UserApiException(json?['message'] as String? ?? 'Không thể đồng bộ Riot account');
+      }
+    } on DioException catch (e) {
+      throw UserApiException(_extractErrorMessage(e, 'Không thể đồng bộ Riot account'));
+    }
+  }
+
+  Future<void> unlinkRiotAccount(String profileId) async {
+    try {
+      final resp = await DioClient.delete('${ApiConstants.addGameProfile}/$profileId/riot');
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw UserApiException(json?['message'] as String? ?? 'Không thể gỡ liên kết Riot account');
+      }
+    } on DioException catch (e) {
+      throw UserApiException(_extractErrorMessage(e, 'Không thể gỡ liên kết Riot account'));
     }
   }
 
@@ -148,9 +223,29 @@ class UserApiService {
       return [];
     }
   }
-}
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+  String _extractErrorMessage(DioException error, String fallback) {
+    final data = error.response?.data;
+    if (data is Map) {
+      final message = data['message'];
+      if (message is String && message.trim().isNotEmpty) {
+        return message;
+      }
+    }
+    if (data is String && data.trim().isNotEmpty) {
+      return data;
+    }
+
+    if (error.type != DioExceptionType.badResponse) {
+      final message = error.message;
+      if (message != null && message.trim().isNotEmpty) {
+        return message;
+      }
+    }
+
+    return fallback;
+  }
+}
 
 final _mockGames = [
   const GameModel(id: '1', name: 'Liên Minh Huyền Thoại', description: 'Game MOBA phổ biến nhất Việt Nam', ranks: ['Sắt', 'Đồng', 'Bạc', 'Vàng', 'Bạch Kim', 'Kim Cương', 'Cao Thủ', 'Thách Đấu'], roles: ['Đỡ Đòn', 'Xạ Thủ', 'Pháp Sư', 'Sát Thủ', 'Hỗ Trợ', 'Trợ Thủ']),
@@ -159,5 +254,3 @@ final _mockGames = [
   const GameModel(id: '4', name: 'PUBG Mobile', description: 'Battle royale mobile', ranks: ['Bronze', 'Silver', 'Gold', 'Platinum', 'Diamond', 'Crown', 'Ace', 'Conqueror'], roles: ['AR', 'SMG', 'SR', 'Sniper', 'IGL']),
   const GameModel(id: '5', name: 'Genshin Impact', description: 'Open world RPG', ranks: [], roles: ['DPS', 'Support', 'Healer', 'Shielder']),
 ];
-
-

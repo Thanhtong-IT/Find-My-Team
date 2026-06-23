@@ -8,6 +8,7 @@ import '../bloc/auth_event.dart';
 import '../../profile/bloc/profile_bloc.dart';
 import '../../profile/bloc/profile_event.dart';
 import '../../profile/bloc/profile_state.dart';
+import '../../profile/models/profile_model.dart';
 
 class SetupProfileScreen extends StatefulWidget {
   const SetupProfileScreen({super.key});
@@ -33,6 +34,12 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> {
   final List<String> _regions = ['TP. Hồ Chí Minh', 'Hà Nội', 'Đà Nẵng', 'Cần Thơ', 'Khác'];
 
   @override
+  void initState() {
+    super.initState();
+    context.read<ProfileBloc>().add(const PopularGamesLoadRequested());
+  }
+
+  @override
   void dispose() {
     _displayNameController.dispose();
     _bioController.dispose();
@@ -45,13 +52,32 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> {
       return;
     }
 
+    final selectedGames = context.read<ProfileBloc>().state.popularGames;
+    final selectedGameModel = _selectedGame == null
+        ? null
+        : selectedGames.where((game) => game.name == _selectedGame).isNotEmpty
+            ? selectedGames.firstWhere((game) => game.name == _selectedGame)
+            : null;
+
+    final gameProfiles = selectedGameModel == null
+        ? <GameProfileUpdateItem>[]
+        : [
+            GameProfileUpdateItem(
+              gameId: selectedGameModel.id,
+              rank: _selectedRank,
+              role: _selectedRole,
+              hasMic: false,
+              isPrimary: true,
+            ),
+          ];
+
     setState(() => _isLoading = true);
 
-    // Gọi API update profile
     context.read<ProfileBloc>().add(ProfileUpdateRequested(
       displayName: _displayNameController.text.trim(),
       bio: _bioController.text.trim(),
       region: _selectedRegion,
+      gameProfiles: gameProfiles,
     ));
   }
 

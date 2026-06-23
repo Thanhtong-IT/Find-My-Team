@@ -143,19 +143,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       );
     }
 
-    // Map UserProfileModel to UI ProfileModel
     GameInfoModel? gameInfo;
     if (_profile!.gameProfiles.isNotEmpty) {
       final gp = _profile!.gameProfiles.first;
       gameInfo = GameInfoModel(
         gameName: gp.gameName ?? 'Game',
-        rank: gp.rank ?? 'Chưa có hạng',
+        rank: gp.displayRank ?? 'Chưa có hạng',
         role: gp.role ?? 'Chưa chọn vai trò',
         hasMic: gp.hasMic,
       );
     }
 
-    // Mock stats for other users
     final stats = [
       const StatModel(label: 'Trận đã chơi', value: '-'),
       const StatModel(label: 'Tỉ lệ thắng', value: '-'),
@@ -297,7 +295,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   children: [
                     Text(team.teamName, style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     const SizedBox(height: 2),
-                    Text('${team.game} \u2022 ${team.memberCount} thành viên', style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary)),
+                    Text('${team.game} • ${team.memberCount} thành viên', style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary)),
                   ],
                 ),
               ),
@@ -363,56 +361,95 @@ class _GameProfileItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final verified = gameProfile.riotVerified;
+    final rankText = gameProfile.displayRank ?? '-';
+
     return Container(
       padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: isSmallScreen ? 36 : 40,
-            height: isSmallScreen ? 36 : 40,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.sports_esports_rounded, color: AppColors.primary, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  gameProfile.gameName ?? 'Game',
-                  style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+          Row(
+            children: [
+              Container(
+                width: isSmallScreen ? 36 : 40,
+                height: isSmallScreen ? 36 : 40,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '${gameProfile.rank ?? '-'} \u2022 ${gameProfile.role ?? '-'}',
-                  style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textSecondary),
+                child: const Icon(Icons.sports_esports_rounded, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            gameProfile.gameName ?? 'Game',
+                            style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          ),
+                        ),
+                        if (verified) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.success.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.verified_rounded, size: 14, color: AppColors.success),
+                                const SizedBox(width: 4),
+                                Text('Riot', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, color: AppColors.success, fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$rankText • ${gameProfile.role ?? '-'}',
+                      style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textSecondary),
+                    ),
+                    if (verified && gameProfile.riotIdDisplay != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        gameProfile.riotIdDisplay!,
+                        style: TextStyle(fontSize: isSmallScreen ? 10 : 11, color: AppColors.textLight),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ),
+              ),
+              if (gameProfile.hasMic)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.success.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.mic, size: 14, color: AppColors.success),
+                      const SizedBox(width: 4),
+                      Text('Mic', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, color: AppColors.success, fontWeight: FontWeight.w500)),
+                    ],
+                  ),
+                ),
+            ],
           ),
-          if (gameProfile.hasMic)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.mic, size: 14, color: AppColors.success),
-                  const SizedBox(width: 4),
-                  Text('Mic', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, color: AppColors.success, fontWeight: FontWeight.w500)),
-                ],
-              ),
-            ),
         ],
       ),
     );

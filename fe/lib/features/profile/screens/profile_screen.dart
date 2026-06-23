@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
 import '../data/profile_repository.dart';
+import '../models/game_model.dart';
 import '../models/profile_model.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/profile_stat_card.dart';
@@ -19,11 +20,11 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-
   @override
   void initState() {
     super.initState();
     context.read<ProfileBloc>().add(const ProfileLoadRequested());
+    context.read<ProfileBloc>().add(const PopularGamesLoadRequested());
   }
 
   void _showSnackBar(BuildContext context, String message, {bool isError = false}) {
@@ -48,16 +49,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _navigateToExploreTab(BuildContext context) {
-    // Navigate to main screen and switch to Explore tab (index 1)
     Navigator.pushNamedAndRemoveUntil(
       context,
       '/main',
       (route) => false,
-    ).then((_) {
-      // After navigation, find MainNavigationScreen and change tab
-      // This is handled by passing initialIndex
-    });
-    // Use a workaround: navigate to /main with initialIndex
+    ).then((_) {});
     Navigator.pushReplacementNamed(context, '/main', arguments: 1);
   }
 
@@ -70,15 +66,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: AppColors.surface,
       body: BlocConsumer<ProfileBloc, ProfileState>(
         listener: (context, state) {
-          if (state.status == ProfileStatus.success && state.errorMessage == null) {
-            // Hiển thị thông báo khi lưu thành công nếu cần
-          }
           if (state.status == ProfileStatus.error && state.errorMessage != null) {
             _showSnackBar(context, state.errorMessage!, isError: true);
           }
         },
         builder: (context, state) {
-          if (state.status == ProfileStatus.loading) {
+          if (state.status == ProfileStatus.loading && state.profile == null) {
             return const Center(child: CircularProgressIndicator());
           }
 
@@ -105,19 +98,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             );
           }
 
-          // Map UserProfileModel to UI ProfileModel
           GameInfoModel? gameInfo;
           if (userProfile.gameProfiles.isNotEmpty) {
             final gp = userProfile.gameProfiles.first;
             gameInfo = GameInfoModel(
               gameName: gp.gameName ?? 'Game',
-              rank: gp.rank ?? 'Chưa có hạng',
+              rank: gp.displayRank ?? 'Chưa có hạng',
               role: gp.role ?? 'Chưa chọn vai trò',
               hasMic: gp.hasMic,
             );
           }
 
-          // Default stats - backend doesn't provide stats yet
           final stats = [
             const StatModel(label: 'Trận đã chơi', value: '-'),
             const StatModel(label: 'Tỉ lệ thắng', value: '-'),
@@ -143,7 +134,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ProfileHeader(
                   profile: profile,
                   isSmallScreen: isSmallScreen,
-                  onEditTap: () => _showEditProfileBottomSheet(context, userProfile),
+                  onEditTap: () => _showEditProfileBottomSheet(context, userProfile, state.popularGames),
                 ),
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20),
@@ -160,7 +151,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       SizedBox(height: isSmallScreen ? 12 : 16),
                       _buildCommunitySection(profile, isSmallScreen),
                       SizedBox(height: isSmallScreen ? 12 : 16),
-                      _buildSettingsSection(isSmallScreen, context, userProfile),
+                      _buildSettingsSection(isSmallScreen, context, userProfile, state.popularGames),
                       SizedBox(height: isSmallScreen ? 24 : 32),
                     ],
                   ),
@@ -176,7 +167,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildCurrentTeam(ProfileModel profile, bool isSmallScreen, BuildContext context) {
     final team = profile.currentTeam;
 
-    // Safety check: if team is null or has no meaningful data, show empty state
     if (team == null || team.teamName.isEmpty) {
       return _CardWrapper(
         isSmallScreen: isSmallScreen,
@@ -197,12 +187,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ElevatedButton.icon(
                     onPressed: () {
                       Navigator.pop(context);
-                      // Navigate to Explore tab (index 1)
                       final mainNav = Navigator.of(context, rootNavigator: true);
                       if (mainNav.canPop()) {
                         mainNav.pop();
                       }
-                      // Use a callback to change tab
                       _navigateToExploreTab(context);
                     },
                     icon: const Icon(Icons.search, size: 18),
@@ -249,7 +237,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Text(team.teamName, style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     const SizedBox(height: 2),
-                    Text('${team.game} \u2022 ${team.memberCount} thành viên', style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary)),
+                    Text('${team.game} • ${team.memberCount} thành viên', style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary)),
                   ],
                 ),
               ),
@@ -260,7 +248,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  team.myRole.isNotEmpty ? team.myRole : 'Thành viên',
+                  team.myRole,
                   style: TextStyle(
                     fontSize: isSmallScreen ? 11 : 12,
                     fontWeight: FontWeight.w600,
@@ -300,7 +288,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildSettingsSection(bool isSmallScreen, BuildContext context, UserProfileModel userProfile) {
+  Widget _buildSettingsSection(bool isSmallScreen, BuildContext context, UserProfileModel userProfile, List<GameModel> games) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -316,7 +304,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             title: 'Chỉnh sửa hồ sơ',
             subtitle: 'Cập nhật thông tin cá nhân',
             isSmallScreen: isSmallScreen,
-            onTap: () => _showEditProfileBottomSheet(context, userProfile),
+            onTap: () => _showEditProfileBottomSheet(context, userProfile, games),
           ),
           _divider(isSmallScreen),
           _buildSettingsItem(
@@ -394,11 +382,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showEditProfileBottomSheet(BuildContext context, UserProfileModel profile) {
-    final nameController = TextEditingController(text: profile.displayName ?? '');
-    final bioController = TextEditingController(text: profile.bio ?? '');
-    final regionController = TextEditingController(text: profile.region ?? '');
-
+  void _showEditProfileBottomSheet(BuildContext context, UserProfileModel profile, List<GameModel> games) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -407,110 +391,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-            left: 20,
-            right: 20,
-            top: 20,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Chỉnh sửa hồ sơ',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: AppColors.textSecondary),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                const Text('Tên hiển thị', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: nameController,
-                  style: const TextStyle(color: AppColors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Nhập tên hiển thị của bạn',
-                    hintStyle: const TextStyle(color: AppColors.textLight),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text('Giới thiệu bản thân (Bio)', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: bioController,
-                  maxLines: 3,
-                  style: const TextStyle(color: AppColors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Mô tả ngắn về bạn (sở thích, game hay chơi...)',
-                    hintStyle: const TextStyle(color: AppColors.textLight),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text('Khu vực (Region)', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: regionController,
-                  style: const TextStyle(color: AppColors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Ví dụ: Hà Nội, TP. HCM...',
-                    hintStyle: const TextStyle(color: AppColors.textLight),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary)),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      final displayName = nameController.text.trim();
-                      final bio = bioController.text.trim();
-                      final region = regionController.text.trim();
-
-                      if (displayName.isEmpty) {
-                        _showSnackBar(context, 'Tên hiển thị không được để trống', isError: true);
-                        return;
-                      }
-
-                      context.read<ProfileBloc>().add(ProfileUpdateRequested(
-                        displayName: displayName,
-                        bio: bio,
-                        region: region,
-                      ));
-
-                      Navigator.pop(ctx);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: AppColors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text('Lưu thay đổi', style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-        );
+        return _EditProfileSheet(profile: profile, games: games);
       },
     );
   }
@@ -606,7 +487,8 @@ class _CommunityItem extends StatelessWidget {
                   right: 0,
                   bottom: 0,
                   child: Container(
-                    width: 14, height: 14,
+                    width: 14,
+                    height: 14,
                     decoration: BoxDecoration(
                       color: AppColors.success,
                       shape: BoxShape.circle,
@@ -633,4 +515,827 @@ class _CommunityItem extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GameProfileDraft {
+  final String? id;
+  final String gameId;
+  final String? gameName;
+  final String? rank;
+  final String? verifiedRank;
+  final String? rankSource;
+  final String? role;
+  final bool hasMic;
+  final bool isPrimary;
+  final String? riotGameName;
+  final String? riotTagLine;
+  final String? riotRegion;
+  final String? riotVerificationStatus;
+  final bool riotVerified;
+
+  const _GameProfileDraft({
+    this.id,
+    required this.gameId,
+    this.gameName,
+    this.rank,
+    this.verifiedRank,
+    this.rankSource,
+    this.role,
+    this.hasMic = false,
+    this.isPrimary = false,
+    this.riotGameName,
+    this.riotTagLine,
+    this.riotRegion,
+    this.riotVerificationStatus,
+    this.riotVerified = false,
+  });
+
+  factory _GameProfileDraft.fromModel(UserGameProfileModel model) {
+    return _GameProfileDraft(
+      id: model.id,
+      gameId: model.gameId,
+      gameName: model.gameName,
+      rank: model.rank,
+      verifiedRank: model.verifiedRank,
+      rankSource: model.rankSource,
+      role: model.role,
+      hasMic: model.hasMic,
+      isPrimary: model.isPrimary,
+      riotGameName: model.riotGameName,
+      riotTagLine: model.riotTagLine,
+      riotRegion: model.riotRegion,
+      riotVerificationStatus: model.riotVerificationStatus,
+      riotVerified: model.riotVerified,
+    );
+  }
+
+  _GameProfileDraft copyWith({
+    String? id,
+    String? gameId,
+    String? gameName,
+    String? rank,
+    String? verifiedRank,
+    String? rankSource,
+    String? role,
+    bool? hasMic,
+    bool? isPrimary,
+    String? riotGameName,
+    String? riotTagLine,
+    String? riotRegion,
+    String? riotVerificationStatus,
+    bool? riotVerified,
+  }) {
+    return _GameProfileDraft(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      gameName: gameName ?? this.gameName,
+      rank: rank ?? this.rank,
+      verifiedRank: verifiedRank ?? this.verifiedRank,
+      rankSource: rankSource ?? this.rankSource,
+      role: role ?? this.role,
+      hasMic: hasMic ?? this.hasMic,
+      isPrimary: isPrimary ?? this.isPrimary,
+      riotGameName: riotGameName ?? this.riotGameName,
+      riotTagLine: riotTagLine ?? this.riotTagLine,
+      riotRegion: riotRegion ?? this.riotRegion,
+      riotVerificationStatus: riotVerificationStatus ?? this.riotVerificationStatus,
+      riotVerified: riotVerified ?? this.riotVerified,
+    );
+  }
+
+  String? get displayRank => verifiedRank ?? rank;
+
+  bool get usesVerifiedRank => (rankSource ?? '').toUpperCase() == 'RIOT';
+
+  GameProfileUpdateItem toRequest() {
+    return GameProfileUpdateItem(
+      id: id,
+      gameId: gameId,
+      rank: rank,
+      role: role,
+      hasMic: hasMic,
+      isPrimary: isPrimary,
+    );
+  }
+}
+
+class _EditProfileSheet extends StatefulWidget {
+  final UserProfileModel profile;
+  final List<GameModel> games;
+
+  const _EditProfileSheet({required this.profile, required this.games});
+
+  @override
+  State<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends State<_EditProfileSheet> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _bioController;
+  late final TextEditingController _regionController;
+  late final List<GameModel> _gameOptions;
+  late List<_GameProfileDraft> _drafts;
+  bool _isSubmitting = false;
+  bool _closeOnSuccess = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.profile.displayName ?? '');
+    _bioController = TextEditingController(text: widget.profile.bio ?? '');
+    _regionController = TextEditingController(text: widget.profile.region ?? '');
+    _gameOptions = _mergeGames(widget.games, widget.profile.gameProfiles);
+    _drafts = widget.profile.gameProfiles.map(_GameProfileDraft.fromModel).toList();
+    if (_drafts.isEmpty && _gameOptions.isNotEmpty) {
+      _drafts = [
+        _GameProfileDraft(
+          gameId: _gameOptions.first.id,
+          gameName: _gameOptions.first.name,
+        ),
+      ];
+    }
+  }
+
+  List<GameModel> _mergeGames(List<GameModel> source, List<UserGameProfileModel> existingProfiles) {
+    final result = <GameModel>[];
+    final seen = <String>{};
+
+    for (final game in source) {
+      if (seen.add(game.id)) {
+        result.add(game);
+      }
+    }
+
+    for (final profile in existingProfiles) {
+      if (seen.add(profile.gameId)) {
+        result.add(
+          GameModel(
+            id: profile.gameId,
+            name: profile.gameName ?? 'Game',
+          ),
+        );
+      }
+    }
+
+    return result;
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _bioController.dispose();
+    _regionController.dispose();
+    super.dispose();
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.primary,
+      ),
+    );
+  }
+
+  void _syncDraftsFromProfile(UserProfileModel profile) {
+    setState(() {
+      _drafts = profile.gameProfiles.map(_GameProfileDraft.fromModel).toList();
+      if (_drafts.isEmpty && _gameOptions.isNotEmpty) {
+        _drafts = [
+          _GameProfileDraft(
+            gameId: _gameOptions.first.id,
+            gameName: _gameOptions.first.name,
+          ),
+        ];
+      }
+    });
+  }
+
+  void _addDraft() {
+    if (_gameOptions.isEmpty) {
+      return;
+    }
+    setState(() {
+      _drafts = [
+        ..._drafts,
+        _GameProfileDraft(gameId: _gameOptions.first.id, gameName: _gameOptions.first.name),
+      ];
+    });
+  }
+
+  void _removeDraft(int index) {
+    setState(() {
+      _drafts = List.of(_drafts)..removeAt(index);
+    });
+  }
+
+  void _setPrimary(int index, bool value) {
+    setState(() {
+      _drafts = _drafts
+          .asMap()
+          .entries
+          .map((entry) => entry.key == index
+              ? entry.value.copyWith(isPrimary: value)
+              : entry.value.copyWith(isPrimary: false))
+          .toList();
+    });
+  }
+
+  void _save() {
+    final displayName = _nameController.text.trim();
+    if (displayName.isEmpty) {
+      _showSnackBar('Tên hiển thị không được để trống', isError: true);
+      return;
+    }
+
+    final filtered = _drafts
+        .where((draft) => draft.gameId.trim().isNotEmpty)
+        .map((draft) => draft.toRequest())
+        .toList();
+
+    setState(() {
+      _isSubmitting = true;
+      _closeOnSuccess = true;
+    });
+
+    context.read<ProfileBloc>().add(
+      ProfileUpdateRequested(
+        displayName: displayName,
+        bio: _bioController.text.trim(),
+        region: _regionController.text.trim(),
+        gameProfiles: filtered,
+      ),
+    );
+  }
+
+  void _verifyRiot(int index) {
+    final draft = _drafts[index];
+    if ((draft.id ?? '').isEmpty) {
+      _showSnackBar('Hãy lưu game profile trước khi xác thực Riot', isError: true);
+      return;
+    }
+
+    final riotGameName = (draft.riotGameName ?? '').trim();
+    final riotTagLine = (draft.riotTagLine ?? '').trim();
+    final riotRegion = (draft.riotRegion ?? '').trim();
+
+    if (riotGameName.isEmpty || riotTagLine.isEmpty || riotRegion.isEmpty) {
+      _showSnackBar('Vui lòng nhập đủ Riot ID và region', isError: true);
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _closeOnSuccess = false;
+    });
+
+    context.read<ProfileBloc>().add(
+      RiotAccountVerifyRequested(
+        profileId: draft.id!,
+        riotGameName: riotGameName,
+        riotTagLine: riotTagLine,
+        region: riotRegion,
+      ),
+    );
+  }
+
+  void _refreshRiot(_GameProfileDraft draft) {
+    if ((draft.id ?? '').isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _closeOnSuccess = false;
+    });
+
+    context.read<ProfileBloc>().add(RiotAccountRefreshRequested(profileId: draft.id!));
+  }
+
+  void _unlinkRiot(_GameProfileDraft draft) {
+    if ((draft.id ?? '').isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _closeOnSuccess = false;
+    });
+
+    context.read<ProfileBloc>().add(RiotAccountUnlinkRequested(profileId: draft.id!));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return BlocListener<ProfileBloc, ProfileState>(
+      listener: (context, state) {
+        if (!_isSubmitting) {
+          return;
+        }
+
+        if (state.status == ProfileStatus.error) {
+          setState(() {
+            _isSubmitting = false;
+            _closeOnSuccess = false;
+          });
+          _showSnackBar(state.errorMessage ?? 'Có lỗi xảy ra', isError: true);
+        }
+
+        if (state.status == ProfileStatus.success && state.profile != null) {
+          final shouldClose = _closeOnSuccess;
+          setState(() {
+            _isSubmitting = false;
+            _closeOnSuccess = false;
+          });
+
+          if (shouldClose) {
+            Navigator.pop(context);
+          } else {
+            _syncDraftsFromProfile(state.profile!);
+            _showSnackBar('Đã cập nhật xác thực Riot');
+          }
+        }
+      },
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: SingleChildScrollView(
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Chỉnh sửa hồ sơ', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: AppColors.textSecondary),
+                        onPressed: _isSubmitting ? null : () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Thông tin cá nhân', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  const SizedBox(height: 12),
+                  _buildTextField('Tên hiển thị', _nameController, 'Nhập tên hiển thị của bạn', enabled: !_isSubmitting),
+                  const SizedBox(height: 12),
+                  _buildTextField('Bio', _bioController, 'Mô tả ngắn về bạn', maxLines: 3, enabled: !_isSubmitting),
+                  const SizedBox(height: 12),
+                  _buildTextField('Khu vực', _regionController, 'Ví dụ: Hà Nội, TP. HCM...', enabled: !_isSubmitting),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Game profiles', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                      TextButton.icon(
+                        onPressed: _isSubmitting ? null : _addDraft,
+                        icon: const Icon(Icons.add, size: 18),
+                        label: const Text('Thêm game'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (_drafts.isEmpty)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.divider),
+                      ),
+                      child: const Text('Chưa có game profile nào.'),
+                    )
+                  else
+                    ..._drafts.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final draft = entry.value;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildGameDraftCard(index, draft),
+                      );
+                    }),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: _isSubmitting ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: _isSubmitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.white),
+                              ),
+                            )
+                          : const Text('Lưu thay đổi', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField(String label, TextEditingController controller, String hint, {int maxLines = 1, bool enabled = true}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: controller,
+          maxLines: maxLines,
+          enabled: enabled,
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: AppColors.textLight),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGameDraftCard(int index, _GameProfileDraft draft) {
+    final items = _gameOptions;
+    final selectedGame = items.where((game) => game.id == draft.gameId).isNotEmpty
+        ? items.firstWhere((game) => game.id == draft.gameId)
+        : null;
+    final isRiotGame = _isRiotGameName(draft.gameName ?? selectedGame?.name);
+    final rankReadOnly = isRiotGame && draft.riotVerified && draft.usesVerifiedRank;
+    final riotRegions = _riotRegionsForGame(draft.gameName ?? selectedGame?.name);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  initialValue: items.any((game) => game.id == draft.gameId) ? draft.gameId : null,
+                  decoration: const InputDecoration(labelText: 'Game'),
+                  items: items
+                      .map((game) => DropdownMenuItem<String>(
+                            value: game.id,
+                            child: Text(game.name),
+                          ))
+                      .toList(),
+                  onChanged: _isSubmitting
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          final selected = items.firstWhere((game) => game.id == value);
+                          setState(() {
+                            _drafts[index] = _GameProfileDraft(
+                              id: draft.id,
+                              gameId: selected.id,
+                              gameName: selected.name,
+                              rank: draft.rank,
+                              role: draft.role,
+                              hasMic: draft.hasMic,
+                              isPrimary: draft.isPrimary,
+                            );
+                          });
+                        },
+                ),
+              ),
+              IconButton(
+                onPressed: _isSubmitting || _drafts.length == 1 ? null : () => _removeDraft(index),
+                icon: const Icon(Icons.delete_outline, color: AppColors.error),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (isRiotGame) ...[
+            _buildRiotStatus(draft),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    key: ValueKey('riot-game-name-$index-${draft.id ?? draft.gameId}-${draft.riotGameName ?? ''}'),
+                    initialValue: draft.riotGameName ?? '',
+                    enabled: !_isSubmitting,
+                    decoration: InputDecoration(
+                      labelText: 'Riot ID',
+                      hintText: 'gameName',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _drafts[index] = draft.copyWith(riotGameName: value);
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    key: ValueKey('riot-tag-line-$index-${draft.id ?? draft.gameId}-${draft.riotTagLine ?? ''}'),
+                    initialValue: draft.riotTagLine ?? '',
+                    enabled: !_isSubmitting,
+                    decoration: InputDecoration(
+                      labelText: 'Tag line',
+                      hintText: 'VN2',
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _drafts[index] = draft.copyWith(riotTagLine: value);
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: riotRegions.contains(draft.riotRegion) ? draft.riotRegion : null,
+              decoration: const InputDecoration(labelText: 'Region Riot'),
+              items: riotRegions
+                  .map((region) => DropdownMenuItem<String>(
+                        value: region,
+                        child: Text(region.toUpperCase()),
+                      ))
+                  .toList(),
+              onChanged: _isSubmitting
+                  ? null
+                  : (value) {
+                      setState(() {
+                        _drafts[index] = draft.copyWith(riotRegion: value);
+                      });
+                    },
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: _isSubmitting ? null : () => _verifyRiot(index),
+                  icon: const Icon(Icons.verified_user_outlined, size: 18),
+                  label: Text(draft.riotVerified ? 'Xác thực lại' : 'Xác thực'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.white,
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _isSubmitting || (draft.id ?? '').isEmpty || !draft.riotVerified ? null : () => _refreshRiot(draft),
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Làm mới'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _isSubmitting || (draft.id ?? '').isEmpty || (!draft.riotVerified && (draft.riotGameName ?? '').isEmpty && (draft.riotTagLine ?? '').isEmpty)
+                      ? null
+                      : () => _unlinkRiot(draft),
+                  icon: const Icon(Icons.link_off, size: 18),
+                  label: const Text('Gỡ liên kết'),
+                ),
+              ],
+            ),
+            if ((draft.id ?? '').isEmpty) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Lưu game profile trước rồi mới xác thực Riot được.',
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ],
+            const SizedBox(height: 12),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  key: ValueKey('rank-$index-${draft.id ?? draft.gameId}-${draft.displayRank ?? ''}-${draft.riotVerified}'),
+                  initialValue: draft.displayRank ?? '',
+                  readOnly: rankReadOnly,
+                  enabled: !_isSubmitting,
+                  decoration: InputDecoration(
+                    labelText: rankReadOnly ? 'Rank đã xác thực' : 'Rank',
+                    hintText: rankReadOnly ? 'Rank từ Riot' : 'Ví dụ: Vàng II',
+                    helperText: rankReadOnly ? 'Rank thủ công bị khóa sau khi xác thực Riot' : null,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onChanged: rankReadOnly
+                      ? null
+                      : (value) {
+                          setState(() {
+                            _drafts[index] = draft.copyWith(rank: value);
+                          });
+                        },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  key: ValueKey('role-$index-${draft.id ?? draft.gameId}-${draft.role ?? ''}'),
+                  initialValue: draft.role ?? '',
+                  enabled: !_isSubmitting,
+                  decoration: InputDecoration(
+                    labelText: 'Role',
+                    hintText: 'Ví dụ: Mid / Support',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _drafts[index] = draft.copyWith(role: value);
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: draft.hasMic,
+                    title: const Text('Có mic'),
+                    onChanged: _isSubmitting
+                        ? null
+                        : (value) {
+                            setState(() {
+                              _drafts[index] = draft.copyWith(hasMic: value);
+                            });
+                          },
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    value: draft.isPrimary,
+                    title: const Text('Profile chính'),
+                    onChanged: _isSubmitting ? null : (value) => _setPrimary(index, value),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRiotStatus(_GameProfileDraft draft) {
+    final statusLabel = _verificationStatusLabel(draft);
+    final statusColor = _verificationStatusColor(draft);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(draft.riotVerified ? Icons.verified_rounded : Icons.info_outline_rounded, size: 18, color: statusColor),
+              const SizedBox(width: 8),
+              Text(
+                statusLabel,
+                style: TextStyle(fontWeight: FontWeight.w700, color: statusColor),
+              ),
+              if (draft.usesVerifiedRank && (draft.verifiedRank ?? '').isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    draft.verifiedRank!,
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            draft.riotVerified
+                ? 'Rank đang lấy từ Riot account đã liên kết.'
+                : 'Game Riot có thể xác thực để tăng độ tin cậy của rank.',
+            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+bool _isRiotGameName(String? gameName) {
+  if (gameName == null) {
+    return false;
+  }
+  final normalized = _normalizeGameName(gameName);
+  return normalized == 'lien minh huyen thoai' ||
+      normalized == 'league of legends' ||
+      normalized == 'lol' ||
+      normalized == 'dau truong chan ly' ||
+      normalized == 'teamfight tactics' ||
+      normalized == 'tft' ||
+      normalized == 'valorant';
+}
+
+List<String> _riotRegionsForGame(String? gameName) {
+  final normalized = _normalizeGameName(gameName ?? '');
+  if (normalized == 'valorant') {
+    return const ['ap', 'kr', 'na', 'latam', 'br', 'eu'];
+  }
+  return const ['vn2', 'kr', 'jp1', 'na1', 'br1', 'euw1', 'eun1', 'la1', 'la2', 'oc1', 'tr1', 'ru', 'ph2', 'sg2', 'th2', 'tw2'];
+}
+
+String _normalizeGameName(String value) {
+  const vietnameseMap = {
+    'à': 'a', 'á': 'a', 'ả': 'a', 'ã': 'a', 'ạ': 'a',
+    'ă': 'a', 'ằ': 'a', 'ắ': 'a', 'ẳ': 'a', 'ẵ': 'a', 'ặ': 'a',
+    'â': 'a', 'ầ': 'a', 'ấ': 'a', 'ẩ': 'a', 'ẫ': 'a', 'ậ': 'a',
+    'è': 'e', 'é': 'e', 'ẻ': 'e', 'ẽ': 'e', 'ẹ': 'e',
+    'ê': 'e', 'ề': 'e', 'ế': 'e', 'ể': 'e', 'ễ': 'e', 'ệ': 'e',
+    'ì': 'i', 'í': 'i', 'ỉ': 'i', 'ĩ': 'i', 'ị': 'i',
+    'ò': 'o', 'ó': 'o', 'ỏ': 'o', 'õ': 'o', 'ọ': 'o',
+    'ô': 'o', 'ồ': 'o', 'ố': 'o', 'ổ': 'o', 'ỗ': 'o', 'ộ': 'o',
+    'ơ': 'o', 'ờ': 'o', 'ớ': 'o', 'ở': 'o', 'ỡ': 'o', 'ợ': 'o',
+    'ù': 'u', 'ú': 'u', 'ủ': 'u', 'ũ': 'u', 'ụ': 'u',
+    'ư': 'u', 'ừ': 'u', 'ứ': 'u', 'ử': 'u', 'ữ': 'u', 'ự': 'u',
+    'ỳ': 'y', 'ý': 'y', 'ỷ': 'y', 'ỹ': 'y', 'ỵ': 'y',
+    'đ': 'd',
+  };
+
+  final normalized = value
+      .trim()
+      .toLowerCase()
+      .split('')
+      .map((char) => vietnameseMap[char] ?? char)
+      .join();
+
+  return normalized
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+}
+
+String _verificationStatusLabel(_GameProfileDraft draft) {
+  if (draft.riotVerified) {
+    return 'Đã xác thực Riot';
+  }
+
+  final status = (draft.riotVerificationStatus ?? '').toUpperCase();
+  if (status == 'FAILED') {
+    return 'Xác thực thất bại';
+  }
+  return 'Chưa xác thực Riot';
+}
+
+Color _verificationStatusColor(_GameProfileDraft draft) {
+  if (draft.riotVerified) {
+    return AppColors.success;
+  }
+
+  final status = (draft.riotVerificationStatus ?? '').toUpperCase();
+  if (status == 'FAILED') {
+    return AppColors.error;
+  }
+  return const Color(0xFFF59E0B);
 }

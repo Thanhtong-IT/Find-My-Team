@@ -3,9 +3,11 @@ package com.findmyteam.modules.user.controller;
 import com.findmyteam.common.dto.ApiResponse;
 import com.findmyteam.modules.auth.entity.User;
 import com.findmyteam.modules.user.dto.AddGameProfileRequest;
+import com.findmyteam.modules.user.dto.UpdateGameProfilesRequest;
 import com.findmyteam.modules.user.dto.UpdateProfileRequest;
 import com.findmyteam.modules.user.dto.UserGameProfileResponse;
 import com.findmyteam.modules.user.dto.UserProfileResponse;
+import com.findmyteam.modules.user.dto.VerifyRiotAccountRequest;
 import com.findmyteam.modules.user.service.UserService;
 import com.findmyteam.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,6 +48,39 @@ public class UserController {
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody UpdateProfileRequest request) {
         return ApiResponse.success(userService.updateProfile(principal.getId(), request));
+    }
+
+    @Operation(summary = "Lưu danh sách game profile của user hiện tại")
+    @PutMapping("/me/game-profiles")
+    public ApiResponse<UserProfileResponse> updateMyGameProfiles(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody UpdateGameProfilesRequest request) {
+        return ApiResponse.success(userService.updateGameProfiles(principal.getId(), request));
+    }
+
+    @Operation(summary = "Xác minh Riot account cho game profile")
+    @PostMapping("/me/game-profile/{profileId}/riot/verify")
+    public ApiResponse<UserGameProfileResponse> verifyRiotAccount(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID profileId,
+            @Valid @RequestBody VerifyRiotAccountRequest request) {
+        return ApiResponse.success(userService.verifyRiotAccount(principal.getId(), profileId, request));
+    }
+
+    @Operation(summary = "Đồng bộ lại dữ liệu Riot cho game profile")
+    @PostMapping("/me/game-profile/{profileId}/riot/refresh")
+    public ApiResponse<UserGameProfileResponse> refreshRiotAccount(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID profileId) {
+        return ApiResponse.success(userService.refreshRiotAccount(principal.getId(), profileId));
+    }
+
+    @Operation(summary = "Gỡ liên kết Riot account khỏi game profile")
+    @DeleteMapping("/me/game-profile/{profileId}/riot")
+    public ApiResponse<UserGameProfileResponse> unlinkRiotAccount(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID profileId) {
+        return ApiResponse.success(userService.unlinkRiotAccount(principal.getId(), profileId));
     }
 
     @Operation(summary = "Thêm game profile cho user")

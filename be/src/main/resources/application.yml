@@ -61,6 +61,9 @@ jwt:
   access-token-expiration: 3600000    # 1 hour in milliseconds
   refresh-token-expiration: 604800000 # 7 days in milliseconds
 
+riot:
+  api-key: RGAPI-280f123d-5be8-448d-a643-dd8df6901137
+
 springdoc:
   api-docs:
     path: /v3/api-docs
