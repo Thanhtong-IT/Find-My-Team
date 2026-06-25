@@ -88,14 +88,21 @@ class _NotificationScreenState extends State<NotificationScreen> {
         final isActionLoading = state.actionStatus == ActionStatus.accepting || state.actionStatus == ActionStatus.rejecting;
         return Scaffold(
           backgroundColor: AppColors.white,
-          body: Column(
-            children: [
-              _buildHeader(isSmallScreen, state),
-              _buildTabs(isSmallScreen),
-              Expanded(
-                child: _buildNotificationList(isSmallScreen, state, isActionLoading),
-              ),
-            ],
+          body: RefreshIndicator(
+            onRefresh: () async {
+              context.read<NotificationBloc>().add(const NotificationLoadRequested());
+              await Future.delayed(const Duration(milliseconds: 500));
+            },
+            color: AppColors.primary,
+            child: Column(
+              children: [
+                _buildHeader(isSmallScreen, state),
+                _buildTabs(isSmallScreen),
+                Expanded(
+                  child: _buildNotificationList(isSmallScreen, state, isActionLoading),
+                ),
+              ],
+            ),
           ),
         );
       },

@@ -58,6 +58,7 @@ public class EventPublisher {
     private String resolveChannel(EventType eventType, Map<String, Object> data) {
         return switch (eventType) {
             case MESSAGE_CREATED -> "events:channel:" + data.get("channelId");
+            case TEAM_MESSAGE_CREATED -> "events:team:" + data.get("teamId");
             case TEAM_MEMBER_JOINED, TEAM_MEMBER_LEFT, TEAM_MEMBER_READY ->
                 "events:team:" + data.get("teamId");
             case TEAM_CREATED, TEAM_DISBANDED ->

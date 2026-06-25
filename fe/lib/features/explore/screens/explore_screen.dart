@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/constants.dart';
@@ -74,6 +75,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _listenTeamEvents() {
     _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
+      debugPrint('[ExploreScreen] Received teamCreated event from WebSocket');
       if (!mounted) return;
       _loadTeams();
     });
@@ -305,11 +307,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
         toolbarHeight: isSmallScreen ? 80 : 90,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        child: RefreshIndicator(
+          onRefresh: _loadInitialData,
+          color: AppColors.primary,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               const SizedBox(height: 12),
               _ExploreSearchBar(
                 controller: _searchController,
@@ -400,7 +406,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 _buildSearchResults(isSmallScreen),
               ],
               const SizedBox(height: 120),
-            ],
+              ],
+            ),
           ),
         ),
       ),

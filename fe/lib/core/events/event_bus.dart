@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import '../websocket/websocket_client.dart';
 
 /// EventBus đơn giản để distribute WebSocket events tới các Bloc.
@@ -12,6 +13,7 @@ class AppEventBus {
   final _teamReloadController = StreamController<void>.broadcast();
   final _profileReloadController = StreamController<void>.broadcast();
   final _navigateToTabController = StreamController<int>.broadcast();
+  final _exploreTeamReloadController = StreamController<void>.broadcast();
   bool _isRegistered = false;
   StreamSubscription? _wsSubscription;
 
@@ -26,6 +28,9 @@ class AppEventBus {
   /// Stream to navigate to a specific tab (e.g., switch to Team tab after accepting)
   Stream<int> get navigateToTabStream => _navigateToTabController.stream;
 
+  /// Stream to trigger explore teams reload (e.g., after creating/disbanding team)
+  Stream<void> get exploreTeamReloadStream => _exploreTeamReloadController.stream;
+
   /// Trigger team reload from anywhere in the app
   void triggerTeamReload() {
     _teamReloadController.add(null);
@@ -34,6 +39,12 @@ class AppEventBus {
   /// Trigger profile reload from anywhere in the app
   void triggerProfileReload() {
     _profileReloadController.add(null);
+  }
+
+  /// Trigger explore teams reload from anywhere in the app
+  void triggerExploreTeamReload() {
+    debugPrint('[EventBus] triggerExploreTeamReload called');
+    _exploreTeamReloadController.add(null);
   }
 
   /// Navigate to a specific tab index
@@ -98,5 +109,6 @@ class AppEventBus {
     _teamReloadController.close();
     _profileReloadController.close();
     _navigateToTabController.close();
+    _exploreTeamReloadController.close();
   }
 }

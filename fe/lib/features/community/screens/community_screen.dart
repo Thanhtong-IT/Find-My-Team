@@ -66,43 +66,55 @@ class _CommunityScreenBody extends StatelessWidget {
             );
           }
           final communities = state.communities;
-          if (communities.isEmpty) {
-            return const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.forum_rounded, size: 64, color: AppColors.textLight),
-                  SizedBox(height: 12),
-                  Text('Chưa có cộng đồng nào', style: TextStyle(color: AppColors.textSecondary)),
-                ],
-              ),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            itemCount: communities.length,
-            itemBuilder: (context, index) {
-              final community = communities[index];
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: AppColors.primary,
-                    child: Text(community.name.isNotEmpty ? community.name[0].toUpperCase() : '?'),
-                  ),
-                  title: Text(community.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text('${community.description}\nThành viên: ${community.memberCount}'),
-                  isThreeLine: true,
-                  trailing: FilledButton(
-                    onPressed: () {
-                      context.read<CommunityBloc>().add(CommunityJoinRequested(community.id));
-                    },
-                    child: const Text('Tham gia'),
-                  ),
-                ),
-              );
+          return RefreshIndicator(
+            onRefresh: () async {
+              context.read<CommunityBloc>().add(const CommunityLoadRequested());
+              await Future.delayed(const Duration(milliseconds: 500));
             },
-          );
+            color: AppColors.primary,
+            child: communities.isEmpty
+                ? ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: [
+                      SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                      const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.forum_rounded, size: 64, color: AppColors.textLight),
+                            SizedBox(height: 12),
+                            Text('Chưa có cộng đồng nào', style: TextStyle(color: AppColors.textSecondary)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: communities.length,
+                    itemBuilder: (context, index) {
+                      final community = communities[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: AppColors.primary,
+                            child: Text(community.name.isNotEmpty ? community.name[0].toUpperCase() : '?'),
+                          ),
+                          title: Text(community.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text('${community.description}\nThành viên: ${community.memberCount}'),
+                          isThreeLine: true,
+                          trailing: FilledButton(
+                            onPressed: () {
+                              context.read<CommunityBloc>().add(CommunityJoinRequested(community.id));
+                            },
+                            child: const Text('Tham gia'),
+                          ),
+                        ),
+                      );
+                    },
+                  );
         },
       ),
     );

@@ -67,7 +67,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
           ));
           break;
         case WsEventType.teamDisbanded:
-          add(const ev.TeamDisbandedEvent());
+          add(ev.TeamDisbandedEvent(event.data['teamId']?.toString() ?? ''));
           break;
         case WsEventType.joinRequestAccepted:
           add(const ev.TeamLoadRequested());
@@ -131,6 +131,8 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       _wsClient.subscribeRoom(team.id, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, successMessage: 'Đã tạo nhóm!'));
       AppEventBus.instance.triggerProfileReload();
+      debugPrint('[TeamBloc] Triggering explore team reload');
+      AppEventBus.instance.triggerExploreTeamReload();
     } catch (e) {
       debugPrint('[TeamBloc] _onCreateRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể tạo nhóm: $e'));
@@ -334,10 +336,13 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   }
 
   void _onTeamDisbanded(ev.TeamDisbandedEvent event, Emitter<TeamState> emit) {
-    if (state.currentTeam != null) {
+    final isMyTeam = state.currentTeam != null && state.currentTeam!.id == event.teamId;
+    if (isMyTeam) {
       _wsClient.unsubscribeRoom(state.currentTeam!.id, 'team');
+      emit(state.copyWith(clearTeam: true, successMessage: 'Nhóm đã bị giải tán'));
+    } else {
+      emit(state.copyWith());
     }
-    emit(state.copyWith(clearTeam: true, successMessage: 'Nhóm đã bị giải tán'));
   }
 
   void _onJoinRequestCreated(ev.JoinRequestCreatedEvent event, Emitter<TeamState> emit) {

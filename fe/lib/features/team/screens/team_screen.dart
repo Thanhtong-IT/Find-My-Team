@@ -1,17 +1,21 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:uuid/uuid.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/events/event_bus.dart';
+import '../../../core/websocket/websocket_client.dart';
 import '../../community/screens/community_chat_screen.dart';
 import '../../community/screens/create_community_screen.dart';
 import '../../community/data/community_repository.dart';
 import '../../community/models/community_model.dart';
+import '../../community/models/chat_message.dart';
 import '../../notification/screens/notification_screen.dart';
 import '../bloc/team_bloc.dart';
 import '../bloc/team_event.dart';
 import '../bloc/team_state.dart';
 import '../models/team_model.dart';
+import '../services/team_chat_api_service.dart';
 import '../../profile/models/game_model.dart';
 import '../../profile/services/user_api_service.dart';
 import '../../profile/bloc/profile_bloc.dart';
@@ -29,7 +33,11 @@ class TeamScreen extends StatefulWidget {
 class _TeamScreenState extends State<TeamScreen> {
   int _selectedTabIndex = 1;
   StreamSubscription? _navigateSub;
+  StreamSubscription? _wsSubscription;
   List<CommunityModel> _communities = [];
+  bool _isChatOpen = false;
+  bool _hasUnreadMessage = false;
+  String? _currentTeamId;
 
   @override
   void initState() {
@@ -39,6 +47,21 @@ class _TeamScreenState extends State<TeamScreen> {
     _navigateSub = AppEventBus.instance.navigateToTabStream.listen((tabIndex) {
       if (mounted) {
         setState(() => _selectedTabIndex = tabIndex);
+      }
+    });
+    _setupGlobalWebSocketListener();
+  }
+
+  void _setupGlobalWebSocketListener() {
+    _wsSubscription = WebSocketClient.instance.eventStream.listen((event) {
+      if (event.type == WsEventType.teamMessageCreated) {
+        if (!_isChatOpen) {
+          final senderId = event.data['senderId']?.toString();
+          final myUserId = context.read<ProfileBloc>().state.profile?.id ?? '';
+          if (senderId != myUserId) {
+            setState(() => _hasUnreadMessage = true);
+          }
+        }
       }
     });
   }
@@ -63,6 +86,7 @@ class _TeamScreenState extends State<TeamScreen> {
   @override
   void dispose() {
     _navigateSub?.cancel();
+    _wsSubscription?.cancel();
     super.dispose();
   }
 
@@ -72,6 +96,32 @@ class _TeamScreenState extends State<TeamScreen> {
         content: Text(message),
         backgroundColor: isError ? AppColors.error : AppColors.primary,
         behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showFullScreenChat(TeamModel team, String currentUserId, String currentUserName) {
+    setState(() {
+      _isChatOpen = true;
+      _hasUnreadMessage = false;
+    });
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: true,
+        barrierDismissible: true,
+        transitionDuration: const Duration(milliseconds: 200),
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return _TeamChatFullScreen(
+            team: team,
+            currentUserId: currentUserId,
+            currentUserName: currentUserName,
+            onClose: () {
+              if (mounted) setState(() => _isChatOpen = false);
+              Navigator.pop(context);
+            },
+          );
+        },
       ),
     );
   }
@@ -94,7 +144,11 @@ class _TeamScreenState extends State<TeamScreen> {
       builder: (context, state) {
         final hasTeam = state.currentTeam != null;
         final myUserId = context.read<ProfileBloc>().state.profile?.id ?? '';
+        final myUserName = context.read<ProfileBloc>().state.profile?.displayName ?? '';
         final isLeader = state.currentTeam?.ownerId == myUserId;
+
+        // Cập nhật team ID hiện tại
+        if (hasTeam) _currentTeamId = state.currentTeam!.id;
 
         return Scaffold(
           backgroundColor: AppColors.white,
@@ -109,6 +163,49 @@ class _TeamScreenState extends State<TeamScreen> {
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
             ),
             actions: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      if (!_isChatOpen && hasTeam) {
+                        _showFullScreenChat(state.currentTeam!, myUserId, myUserName);
+                      }
+                    },
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _isChatOpen ? AppColors.primary : const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: _isChatOpen ? AppColors.white : AppColors.primary,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                  if (_hasUnreadMessage)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white,
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
                 child: Container(
@@ -129,91 +226,106 @@ class _TeamScreenState extends State<TeamScreen> {
             ],
           ),
           body: SafeArea(
-            child: Column(
+            child: Stack(
               children: [
-                _TeamTopTabs(
-                  selectedIndex: _selectedTabIndex,
-                  isSmallScreen: isSmallScreen,
-                  onTabSelected: (index) {
-                    setState(() => _selectedTabIndex = index);
-                    // Nếu click sang tab Yêu cầu và user đang có nhóm, tự động load các Join Requests
-                    if (index == 0 && hasTeam) {
-                      context.read<TeamBloc>().add(const TeamJoinRequestsLoadRequested());
-                    }
-                  },
-                ),
-                Expanded(
-                  child: state.status == TeamStatus.loading
-                      ? const Center(child: CircularProgressIndicator())
-                      : IndexedStack(
-                          index: _selectedTabIndex,
-                          children: [
-                            _RequestTab(
-                              requests: state.joinRequests,
-                              hasTeam: hasTeam,
-                              isSmallScreen: isSmallScreen,
-                              onAccept: (reqId) {
-                                context.read<TeamBloc>().add(JoinRequestAccepted(reqId));
-                              },
-                              onReject: (reqId) {
-                                context.read<TeamBloc>().add(JoinRequestRejected(reqId));
-                              },
-                              onViewProfile: (userId) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => UserProfileScreen(userId: userId),
+                Column(
+                  children: [
+                    _TeamTopTabs(
+                      selectedIndex: _selectedTabIndex,
+                      isSmallScreen: isSmallScreen,
+                      onTabSelected: (index) {
+                        setState(() => _selectedTabIndex = index);
+                        if (index == 0 && hasTeam) {
+                          context.read<TeamBloc>().add(const TeamJoinRequestsLoadRequested());
+                        }
+                      },
+                    ),
+                    Expanded(
+                      child: RefreshIndicator(
+                        onRefresh: () async {
+                          context.read<TeamBloc>().add(const TeamLoadRequested());
+                          await Future.delayed(const Duration(milliseconds: 500));
+                        },
+                        color: AppColors.primary,
+                        child: state.status == TeamStatus.loading
+                            ? const Center(child: CircularProgressIndicator())
+                            : IndexedStack(
+                                index: _selectedTabIndex,
+                                children: [
+                                  _RequestTab(
+                                    requests: state.joinRequests,
+                                    hasTeam: hasTeam,
+                                    isSmallScreen: isSmallScreen,
+                                    onRefresh: () {
+                                      context.read<TeamBloc>().add(const TeamJoinRequestsLoadRequested());
+                                    },
+                                    onAccept: (reqId) {
+                                      context.read<TeamBloc>().add(JoinRequestAccepted(reqId));
+                                    },
+                                    onReject: (reqId) {
+                                      context.read<TeamBloc>().add(JoinRequestRejected(reqId));
+                                    },
+                                    onViewProfile: (userId) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => UserProfileScreen(userId: userId),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              },
-                            ),
-                            _TeamTab(
-                              hasTeam: hasTeam,
-                              team: state.currentTeam,
-                              myUserId: myUserId,
-                              isSmallScreen: isSmallScreen,
-                              onCreateTeam: (name, gameId, size, requiredRank, description) {
-                                context.read<TeamBloc>().add(TeamCreateRequested(
-                                      name: name,
-                                      gameId: gameId,
-                                      maxMembers: size,
-                                      requiredRank: requiredRank,
-                                      description: description,
-                                    ));
-                              },
-                              onDisbandTeam: () {
-                                context.read<TeamBloc>().add(const TeamDisbandRequested());
-                              },
-                              onLeaveTeam: () {
-                                context.read<TeamBloc>().add(const TeamLeaveRequested());
-                              },
-                              onReadyToggled: (ready) {
-                                context.read<TeamBloc>().add(TeamReadyToggled(ready));
-                              },
-                              onViewProfile: (userId) {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => UserProfileScreen(userId: userId),
+                                  _TeamTab(
+                                    hasTeam: hasTeam,
+                                    team: state.currentTeam,
+                                    myUserId: myUserId,
+                                    myUserName: myUserName,
+                                    isSmallScreen: isSmallScreen,
+                                    onCreateTeam: (name, gameId, size, requiredRank, description) {
+                                      context.read<TeamBloc>().add(TeamCreateRequested(
+                                            name: name,
+                                            gameId: gameId,
+                                            maxMembers: size,
+                                            requiredRank: requiredRank,
+                                            description: description,
+                                          ));
+                                    },
+                                    onDisbandTeam: () {
+                                      context.read<TeamBloc>().add(const TeamDisbandRequested());
+                                    },
+                                    onLeaveTeam: () {
+                                      context.read<TeamBloc>().add(const TeamLeaveRequested());
+                                    },
+                                    onReadyToggled: (ready) {
+                                      context.read<TeamBloc>().add(TeamReadyToggled(ready));
+                                    },
+                                    onViewProfile: (userId) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => UserProfileScreen(userId: userId),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                );
-                              },
-                            ),
-                            _CommunityTab(communities: _communities, isSmallScreen: isSmallScreen),
-                          ],
-                        ),
+                                  _CommunityTab(communities: _communities, isSmallScreen: isSmallScreen),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-          floatingActionButton: _buildFab(hasTeam, isLeader, state.currentTeam),
+          floatingActionButton: _buildFab(hasTeam, isLeader, state.currentTeam, _isChatOpen),
           floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         );
       },
     );
   }
 
-  Widget? _buildFab(bool hasTeam, bool isLeader, TeamModel? currentTeam) {
+  Widget? _buildFab(bool hasTeam, bool isLeader, TeamModel? currentTeam, bool showChatPanel) {
+    if (showChatPanel) return null;
     if (_selectedTabIndex == 0) return null;
     if (_selectedTabIndex == 1 && !hasTeam) return null;
     if (_selectedTabIndex == 1 && hasTeam) {
@@ -308,6 +420,7 @@ class _RequestTab extends StatelessWidget {
   final List<JoinRequestModel> requests;
   final bool hasTeam;
   final bool isSmallScreen;
+  final VoidCallback onRefresh;
   final void Function(String) onAccept;
   final void Function(String) onReject;
   final void Function(String userId) onViewProfile;
@@ -316,6 +429,7 @@ class _RequestTab extends StatelessWidget {
     required this.requests,
     required this.hasTeam,
     required this.isSmallScreen,
+    required this.onRefresh,
     required this.onAccept,
     required this.onReject,
     required this.onViewProfile,
@@ -325,54 +439,67 @@ class _RequestTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!hasTeam) {
       return SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            const SizedBox(height: 40),
-            Icon(Icons.inbox_rounded, size: isSmallScreen ? 60 : 72, color: AppColors.textLight),
-            const SizedBox(height: 16),
-            Text('Bạn chưa có nhóm', style: TextStyle(fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-            const SizedBox(height: 8),
-            Text('Hãy tạo nhóm trước để nhận yêu cầu tham gia.', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: AppColors.textSecondary), textAlign: TextAlign.center),
-            const SizedBox(height: 40),
-          ],
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: RefreshIndicator(
+          onRefresh: () async => onRefresh(),
+          color: AppColors.primary,
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                Icon(Icons.inbox_rounded, size: isSmallScreen ? 60 : 72, color: AppColors.textLight),
+                const SizedBox(height: 16),
+                Text('Bạn chưa có nhóm', style: TextStyle(fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                Text('Hãy tạo nhóm trước để nhận yêu cầu tham gia.', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                const SizedBox(height: 40),
+              ],
+            ),
+          ),
         ),
       );
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Text('Yêu cầu tham gia (${requests.length})', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-          const SizedBox(height: 12),
-          if (requests.isEmpty)
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 32),
-              alignment: Alignment.center,
-              child: Column(
-                children: [
-                  Icon(Icons.check_circle_outline_rounded, size: isSmallScreen ? 48 : 56, color: AppColors.success),
-                  const SizedBox(height: 12),
-                  Text('Không có yêu cầu nào', style: TextStyle(fontSize: isSmallScreen ? 14 : 15, color: AppColors.textSecondary)),
-                ],
-              ),
-            )
-          else
-            ...requests.map((request) => Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _JoinRequestCard(
-                    request: request,
-                    isSmallScreen: isSmallScreen,
-                    onAccept: () => onAccept(request.id),
-                    onReject: () => onReject(request.id),
-                    onViewProfile: () => onViewProfile(request.userId),
-                  ),
-                )),
-          const SizedBox(height: 120),
-        ],
+    return RefreshIndicator(
+      onRefresh: () async => onRefresh(),
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            Text('Yêu cầu tham gia (${requests.length})', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            if (requests.isEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                alignment: Alignment.center,
+                child: Column(
+                  children: [
+                    Icon(Icons.check_circle_outline_rounded, size: isSmallScreen ? 48 : 56, color: AppColors.success),
+                    const SizedBox(height: 12),
+                    Text('Không có yêu cầu nào', style: TextStyle(fontSize: isSmallScreen ? 14 : 15, color: AppColors.textSecondary)),
+                  ],
+                ),
+              )
+            else
+              ...requests.map((request) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _JoinRequestCard(
+                      request: request,
+                      isSmallScreen: isSmallScreen,
+                      onAccept: () => onAccept(request.id),
+                      onReject: () => onReject(request.id),
+                      onViewProfile: () => onViewProfile(request.userId),
+                    ),
+                  )),
+            const SizedBox(height: 120),
+          ],
+        ),
       ),
     );
   }
@@ -474,6 +601,7 @@ class _TeamTab extends StatelessWidget {
   final bool hasTeam;
   final TeamModel? team;
   final String myUserId;
+  final String myUserName;
   final bool isSmallScreen;
   final void Function(String name, String gameId, int size, String requiredRank, String description) onCreateTeam;
   final VoidCallback onDisbandTeam;
@@ -485,6 +613,7 @@ class _TeamTab extends StatelessWidget {
     required this.hasTeam,
     this.team,
     required this.myUserId,
+    required this.myUserName,
     required this.isSmallScreen,
     required this.onCreateTeam,
     required this.onDisbandTeam,
@@ -497,6 +626,7 @@ class _TeamTab extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!hasTeam || team == null) {
       return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: _CreateTeamForm(isSmallScreen: isSmallScreen, onSubmit: onCreateTeam),
       );
@@ -508,7 +638,6 @@ class _TeamTab extends StatelessWidget {
     final emptySlots = teamSize - members.length;
     final isLeader = currentTeam.ownerId == myUserId;
 
-    // Tìm trạng thái sẵn sàng của tôi
     final myMember = members.firstWhere(
       (m) => m.userId == myUserId,
       orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
@@ -516,6 +645,7 @@ class _TeamTab extends StatelessWidget {
     final isMyReady = myMember.isReady;
 
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,6 +668,8 @@ class _TeamTab extends StatelessWidget {
                 member: member,
                 isLeader: member.isLeader || member.userId == currentTeam.ownerId,
                 isSmallScreen: isSmallScreen,
+                myUserId: myUserId,
+                myUserName: myUserName,
                 onTap: () => onViewProfile(member.userId),
               ),
             );
@@ -729,12 +861,16 @@ class _MemberRow extends StatelessWidget {
   final TeamMemberModel member;
   final bool isLeader;
   final bool isSmallScreen;
+  final String myUserId;
+  final String myUserName;
   final VoidCallback onTap;
 
   const _MemberRow({
     required this.member,
     required this.isLeader,
     required this.isSmallScreen,
+    required this.myUserId,
+    required this.myUserName,
     required this.onTap,
   });
 
@@ -782,7 +918,12 @@ class _MemberRow extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Text(member.displayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                      Text(
+                        member.displayName == 'Unknown' && member.userId == myUserId && myUserName.isNotEmpty
+                            ? myUserName
+                            : member.displayName,
+                        style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                      ),
                       if (isLeader) ...[
                         const SizedBox(width: 6),
                         Container(
@@ -1147,6 +1288,7 @@ class _CommunityTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1216,6 +1358,685 @@ class _CommunityCard extends StatelessWidget {
             ),
             Icon(Icons.chevron_right, color: AppColors.textLight, size: isSmallScreen ? 22 : 26),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TeamChatPanel extends StatefulWidget {
+  final TeamModel team;
+  final VoidCallback onClose;
+  final String currentUserId;
+  final String currentUserName;
+
+  const _TeamChatPanel({
+    required this.team,
+    required this.onClose,
+    required this.currentUserId,
+    required this.currentUserName,
+  });
+
+  @override
+  State<_TeamChatPanel> createState() => _TeamChatPanelState();
+}
+
+class _TeamChatPanelState extends State<_TeamChatPanel> {
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<ChatMessage> _messages = [];
+  final TeamChatApiService _chatApiService = TeamChatApiService();
+  bool _isLoading = false;
+  String? _typingUserId;
+  StreamSubscription? _wsSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+    _setupWebSocket();
+  }
+
+  void _setupWebSocket() {
+    _wsSubscription = WebSocketClient.instance.eventStream.listen((event) {
+      if (event.type == WsEventType.teamMessageCreated) {
+        final teamId = event.data['teamId']?.toString();
+        if (teamId == widget.team.id) {
+          final messageId = event.data['messageId']?.toString() ?? '';
+          final clientMessageId = event.data['clientMessageId']?.toString() ?? messageId;
+
+          // Tránh duplicate: kiểm tra cả clientMessageId (optimistic) và serverMessageId
+          final exists = _messages.any((m) =>
+            m.clientMessageId == clientMessageId || m.serverMessageId == messageId);
+          if (exists) return;
+
+          // Parse server timestamp (UTC) và convert sang local time
+          DateTime timestamp = DateTime.now();
+          if (event.data['createdAt'] != null) {
+            try {
+              timestamp = DateTime.parse(event.data['createdAt'].toString()).toLocal();
+            } catch (_) {}
+          }
+
+          final message = ChatMessage(
+            clientMessageId: clientMessageId,
+            serverMessageId: messageId,
+            channelId: teamId,
+            senderId: event.data['senderId']?.toString() ?? '',
+            senderName: event.data['senderName'] as String? ?? 'Unknown',
+            content: event.data['content'] as String? ?? '',
+            timestamp: timestamp,
+            status: MessageStatus.sent,
+          );
+          if (mounted) {
+            setState(() {
+              _messages.insert(0, message);
+            });
+            _scrollToBottom();
+          }
+        }
+      }
+    });
+
+    // Subscribe to team room
+    WebSocketClient.instance.subscribeRoom(widget.team.id, 'team');
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    _wsSubscription?.cancel();
+    WebSocketClient.instance.unsubscribeRoom(widget.team.id, 'team');
+    super.dispose();
+  }
+
+  Future<void> _loadMessages() async {
+    setState(() => _isLoading = true);
+    try {
+      final messages = await _chatApiService.getMessages(teamId: widget.team.id);
+      if (mounted) {
+        setState(() {
+          _messages.addAll(messages);
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty) return;
+
+    // Dùng UUID để tránh race condition với timestamp
+    final clientMessageId = const Uuid().v4();
+    final now = DateTime.now();
+    final tempMessage = ChatMessage(
+      clientMessageId: clientMessageId,
+      channelId: widget.team.id,
+      senderId: widget.currentUserId,
+      senderName: 'Bạn',
+      content: text,
+      timestamp: now,
+      status: MessageStatus.sending,
+    );
+
+    _messageController.clear();
+    setState(() {
+      _messages.insert(0, tempMessage);
+    });
+
+    try {
+      final result = await _chatApiService.sendMessage(
+        teamId: widget.team.id,
+        clientMessageId: clientMessageId,
+        content: text,
+      );
+      if (result != null && mounted) {
+        setState(() {
+          final index = _messages.indexWhere((m) => m.clientMessageId == clientMessageId);
+          if (index != -1) {
+            _messages[index] = result;
+          }
+        });
+      }
+    } catch (_) {
+      // Message failed, could show error indicator
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final panelWidth = screenWidth < 500 ? screenWidth * 0.85 : 380.0;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: panelWidth,
+      decoration: BoxDecoration(
+        color: const Color(0xFF2B2D31),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(-2, 0),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF313338),
+              border: Border(
+                bottom: BorderSide(color: Color(0xFF1E1F22), width: 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.tag, color: Color(0xFF949BA4), size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.team.name,
+                    style: const TextStyle(
+                      color: Color(0xFFF2F3F5),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                GestureDetector(
+                  onTap: widget.onClose,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    child: const Icon(Icons.close, color: Color(0xFF949BA4), size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Messages
+          Expanded(
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF5865F2)),
+                  )
+                : _messages.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.chat_bubble_outline,
+                              size: 48,
+                              color: Colors.white.withValues(alpha: 0.2),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              'Chưa có tin nhắn nào',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.4),
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Hãy gửi tin nhắn đầu tiên!',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        itemCount: _messages.length,
+                        itemBuilder: (context, index) {
+                          final msg = _messages[index];
+                          final isMe = msg.senderId == widget.currentUserId;
+                          return _ChatMessageBubble(
+                            message: msg,
+                            isMe: isMe,
+                            currentUserName: widget.currentUserName,
+                          );
+                        },
+                      ),
+          ),
+          // Typing indicator
+          if (_typingUserId != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  Text(
+                    '$_typingUserId đang nhập...',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.5),
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          // Input
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF313338),
+              border: Border(
+                top: BorderSide(color: Color(0xFF1E1F22), width: 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    style: const TextStyle(color: Color(0xFFF2F3F5), fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Nhắn tin trong ${widget.team.name}',
+                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                      filled: true,
+                      fillColor: const Color(0xFF383A40),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _sendMessage,
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF5865F2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChatMessageBubble extends StatelessWidget {
+  final ChatMessage message;
+  final bool isMe;
+  final String? currentUserName;
+
+  const _ChatMessageBubble({
+    required this.message,
+    required this.isMe,
+    this.currentUserName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isMe) const Spacer(),
+          Container(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.65,
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isMe ? const Color(0xFF5865F2) : const Color(0xFF383A40),
+              borderRadius: BorderRadius.only(
+                topLeft: const Radius.circular(18),
+                topRight: const Radius.circular(18),
+                bottomLeft: Radius.circular(isMe ? 18 : 4),
+                bottomRight: Radius.circular(isMe ? 4 : 18),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [
+                if (!isMe)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: Text(
+                      message.senderName == 'Unknown' && currentUserName != null && currentUserName!.isNotEmpty
+                          ? currentUserName!
+                          : message.senderName,
+                      style: const TextStyle(
+                        color: Color(0xFF949BA4),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                Text(
+                  message.content,
+                  style: const TextStyle(
+                    color: Color(0xFFF2F3F5),
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _formatTime(message.timestamp),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (!isMe) const Spacer(),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+}
+
+class _TeamChatFullScreen extends StatefulWidget {
+  final TeamModel team;
+  final String currentUserId;
+  final String currentUserName;
+  final VoidCallback onClose;
+
+  const _TeamChatFullScreen({
+    required this.team,
+    required this.currentUserId,
+    required this.currentUserName,
+    required this.onClose,
+  });
+
+  @override
+  State<_TeamChatFullScreen> createState() => _TeamChatFullScreenState();
+}
+
+class _TeamChatFullScreenState extends State<_TeamChatFullScreen> {
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final List<ChatMessage> _messages = [];
+  final TeamChatApiService _chatApiService = TeamChatApiService();
+  bool _isLoading = false;
+  StreamSubscription? _wsSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMessages();
+    _setupWebSocket();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    _wsSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadMessages() async {
+    setState(() => _isLoading = true);
+    try {
+      final msgs = await _chatApiService.getMessages(teamId: widget.team.id);
+      if (mounted) {
+        setState(() {
+          _messages.addAll(msgs);
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _setupWebSocket() {
+    _wsSubscription = WebSocketClient.instance.eventStream.listen((event) {
+      if (event.type == WsEventType.teamMessageCreated) {
+        final teamId = event.data['teamId']?.toString();
+        if (teamId == widget.team.id) {
+          final messageId = event.data['messageId']?.toString() ?? '';
+          final clientMessageId = event.data['clientMessageId']?.toString() ?? messageId;
+
+          final exists = _messages.any((m) =>
+            m.clientMessageId == clientMessageId || m.serverMessageId == messageId);
+          if (exists) return;
+
+          DateTime timestamp = DateTime.now();
+          if (event.data['createdAt'] != null) {
+            try {
+              timestamp = DateTime.parse(event.data['createdAt'].toString()).toLocal();
+            } catch (_) {}
+          }
+
+          final message = ChatMessage(
+            clientMessageId: clientMessageId,
+            serverMessageId: messageId,
+            channelId: teamId,
+            senderId: event.data['senderId']?.toString() ?? '',
+            senderName: event.data['senderName'] as String? ?? 'Unknown',
+            content: event.data['content'] as String? ?? '',
+            timestamp: timestamp,
+            status: MessageStatus.sent,
+          );
+          if (mounted) {
+            setState(() {
+              _messages.insert(0, message);
+            });
+            _scrollToBottom();
+          }
+        }
+      }
+    });
+
+    WebSocketClient.instance.subscribeRoom(widget.team.id, 'team');
+  }
+
+  Future<void> _sendMessage() async {
+    final content = _messageController.text.trim();
+    if (content.isEmpty) return;
+
+    _messageController.clear();
+    final tempId = DateTime.now().millisecondsSinceEpoch.toString();
+    try {
+      await _chatApiService.sendMessage(
+        teamId: widget.team.id,
+        clientMessageId: tempId,
+        content: content,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gửi tin nhắn thất bại')),
+        );
+      }
+    }
+  }
+
+  void _scrollToBottom() {
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  String _formatTime(DateTime time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onVerticalDragEnd: (details) {
+        if (details.primaryVelocity != null && details.primaryVelocity! > 300) {
+          widget.onClose();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF313338),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 4),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF949BA4).withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF313338),
+                  border: Border(
+                    bottom: BorderSide(color: Color(0xFF1E1F22), width: 1),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.tag, color: Color(0xFF949BA4), size: 20),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.team.name,
+                        style: const TextStyle(
+                          color: Color(0xFFF2F3F5),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: widget.onClose,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        child: const Icon(Icons.close, color: Color(0xFF949BA4), size: 20),
+                      ),
+                    ),
+                  ],
+                ),
+                          ),
+              Expanded(
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator(color: Color(0xFF5865F2)))
+                    : _messages.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.chat_bubble_outline, size: 48, color: Colors.white.withValues(alpha: 0.2)),
+                                const SizedBox(height: 12),
+                                Text('Chưa có tin nhắn nào', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12)),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            reverse: true,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            itemCount: _messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = _messages[index];
+                              final isMe = msg.senderId == widget.currentUserId;
+                              return _ChatMessageBubble(
+                                message: msg,
+                                isMe: isMe,
+                                currentUserName: widget.currentUserName,
+                              );
+                            },
+                          ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF313338),
+                  border: Border(top: BorderSide(color: Color(0xFF1E1F22), width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _messageController,
+                        style: const TextStyle(color: Color(0xFFF2F3F5)),
+                        decoration: InputDecoration(
+                          hintText: 'Nhắn tin...',
+                          hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                          filled: true,
+                          fillColor: const Color(0xFF383A40),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
+                        ),
+                        onSubmitted: (_) => _sendMessage(),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: _sendMessage,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF5865F2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.send, color: Colors.white, size: 18),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

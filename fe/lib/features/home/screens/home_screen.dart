@@ -1,6 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/network/dio_client.dart';
+import '../../../core/events/event_bus.dart';
 import '../../notification/screens/notification_screen.dart';
 import '../../profile/models/game_model.dart';
 import '../../team/services/team_api_service.dart';
@@ -20,11 +23,27 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoadingTeams = true;
   String? _gamesError;
   String? _teamsError;
+  StreamSubscription? _exploreTeamSub;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _listenTeamEvents();
+  }
+
+  void _listenTeamEvents() {
+    _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
+      debugPrint('[HomeScreen] Received teamCreated event from WebSocket');
+      if (!mounted) return;
+      _loadTeams();
+    });
+  }
+
+  @override
+  void dispose() {
+    _exploreTeamSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadData() async {

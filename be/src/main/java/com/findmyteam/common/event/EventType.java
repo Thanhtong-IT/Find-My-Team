@@ -29,6 +29,7 @@ public enum EventType {
 
     // Message events
     MESSAGE_CREATED,
+    TEAM_MESSAGE_CREATED,
 
     // User presence events
     USER_ONLINE,

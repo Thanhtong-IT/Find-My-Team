@@ -12,6 +12,7 @@ enum WsEventType {
   authFailed,
   // Messaging
   messageCreated,
+  teamMessageCreated,
   // Team
   teamCreated,
   teamMemberJoined,
@@ -189,6 +190,8 @@ class WebSocketClient {
     switch (op) {
       case 'MESSAGE_CREATED':
         return WsEventType.messageCreated;
+      case 'TEAM_MESSAGE_CREATED':
+        return WsEventType.teamMessageCreated;
       case 'TEAM_CREATED':
         return WsEventType.teamCreated;
       case 'TEAM_MEMBER_JOINED':

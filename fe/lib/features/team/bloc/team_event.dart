@@ -103,7 +103,10 @@ class TeamMemberReadyEvent extends TeamEvent {
 }
 
 class TeamDisbandedEvent extends TeamEvent {
-  const TeamDisbandedEvent();
+  final String teamId;
+  const TeamDisbandedEvent(this.teamId);
+  @override
+  List<Object?> get props => [teamId];
 }
 
 class JoinRequestCreatedEvent extends TeamEvent {
