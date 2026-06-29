@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Các loại event từ WebSocket server.
@@ -19,6 +20,7 @@ enum WsEventType {
   teamMemberLeft,
   teamMemberReady,
   teamDisbanded,
+  teamMemberKicked,
   // Join request
   joinRequestCreated,
   joinRequestAccepted,
@@ -144,6 +146,8 @@ class WebSocketClient {
       final data = json['data'] as Map<String, dynamic>? ?? {};
       final eventId = json['eventId'] as String?;
 
+      debugPrint('[WS] Incoming: op=$op, hasEventId=${eventId != null}, dataKeys=${data.keys.toList()}');
+
       if (op == 'heartbeat_ack' || op == 'resume_ack') {
         return;
       }
@@ -153,6 +157,7 @@ class WebSocketClient {
 
       if (op == 'event') {
         final innerEvent = data['data'] as Map<String, dynamic>?;
+        debugPrint('[WS] Inner event: $innerEvent');
         if (innerEvent != null) {
           eventTypeStr = innerEvent['type'] as String?;
           eventData = innerEvent['data'] as Map<String, dynamic>? ?? {};
@@ -160,11 +165,13 @@ class WebSocketClient {
       }
 
       final type = _parseEventType(eventTypeStr);
+      debugPrint('[WS] Parsed type: $type');
 
       if (type != WsEventType.unknown) {
         // Deduplicate by eventId
         if (eventId != null) {
           if (_processedEventIds.contains(eventId)) {
+            debugPrint('[WS] Duplicate eventId $eventId, ignoring');
             return; // Already processed this event
           }
           _processedEventIds.add(eventId);
@@ -175,6 +182,7 @@ class WebSocketClient {
         }
 
         final event = WsIncomingEvent(type: type, data: eventData, eventId: eventId);
+        debugPrint('[WS] Emitting event: $event');
         _eventController.add(event);
       }
 
@@ -202,6 +210,8 @@ class WebSocketClient {
         return WsEventType.teamMemberReady;
       case 'TEAM_DISBANDED':
         return WsEventType.teamDisbanded;
+      case 'TEAM_MEMBER_KICKED':
+        return WsEventType.teamMemberKicked;
       case 'JOIN_REQUEST_CREATED':
         return WsEventType.joinRequestCreated;
       case 'JOIN_REQUEST_ACCEPTED':

@@ -89,7 +89,9 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.findmyteam: DEBUG
+    com.findmyteam: TRACE
+    com.findmyteam.websocket: TRACE
+    com.findmyteam.common.event: TRACE
     org.springframework.web: INFO
     org.hibernate.SQL: WARN
     org.hibernate.type.descriptor.sql.BasicBinder: WARN

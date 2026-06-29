@@ -36,6 +36,8 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     on<ev.TeamMemberReadyEvent>(_onMemberReady);
     on<ev.TeamDisbandedEvent>(_onTeamDisbanded);
     on<ev.JoinRequestCreatedEvent>(_onJoinRequestCreated);
+    on<ev.TeamMemberKickedEvent>(_onMemberKicked);
+    on<ev.TeamMemberKickRequested>(_onKickRequested);
 
     _listenWebSocket();
     _listenConnection();
@@ -50,6 +52,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
 
   void _listenWebSocket() {
     _wsSub = AppEventBus.instance.teamEventStream.listen((event) {
+      debugPrint('[TeamBloc] WebSocket event received: type=${event.type}, data=${event.data}');
       switch (event.type) {
         case WsEventType.teamMemberJoined:
           add(ev.TeamMemberJoinedEvent(
@@ -58,7 +61,11 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
           ));
           break;
         case WsEventType.teamMemberLeft:
-          add(ev.TeamMemberLeftEvent(event.data['userId']?.toString() ?? ''));
+          // Handle both old format (userId) and new format (leftUserId/kickedUserId)
+          final leftUserId = event.data['leftUserId']?.toString() ??
+                            event.data['kickedUserId']?.toString() ??
+                            event.data['userId']?.toString() ?? '';
+          add(ev.TeamMemberLeftEvent(leftUserId));
           break;
         case WsEventType.teamMemberReady:
           add(ev.TeamMemberReadyEvent(
@@ -71,6 +78,10 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
           break;
         case WsEventType.joinRequestAccepted:
           add(const ev.TeamLoadRequested());
+          break;
+        case WsEventType.teamMemberKicked:
+          // For kicked user - should leave the team screen
+          add(ev.TeamMemberKickedEvent(event.data['userId']?.toString() ?? ''));
           break;
         case WsEventType.joinRequestCreated:
           add(ev.JoinRequestCreatedEvent(
@@ -267,25 +278,24 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     }
   }
 
-  void _onMemberJoined(ev.TeamMemberJoinedEvent event, Emitter<TeamState> emit) async {
+  void _onMemberJoined(ev.TeamMemberJoinedEvent event, Emitter<TeamState> emit) {
     if (state.currentTeam == null) return;
-    // Reload entire team to ensure data consistency
-    try {
-      final team = await _teamApiService.getMyTeam();
-      if (team != null) {
-        _wsClient.subscribeRoom(team.id, 'team');
-      }
-      emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, clearTeam: team == null));
-    } catch (e) {
-      debugPrint('[TeamBloc] _onMemberJoined reload failed: $e');
-    }
-  }
 
-  void _onMemberLeft(ev.TeamMemberLeftEvent event, Emitter<TeamState> emit) {
-    if (state.currentTeam == null) return;
-    final updatedMembers = state.currentTeam!.members
-        .where((m) => m.userId != event.userId)
-        .toList();
+    // Check if already in members list
+    if (state.currentTeam!.members.any((m) => m.userId == event.userId)) {
+      return;
+    }
+
+    // Update state directly - add the new member
+    final newMember = TeamMemberModel(
+      id: '', // Will be filled from reload
+      userId: event.userId,
+      displayName: event.displayName,
+      role: 'member',
+      isReady: false,
+    );
+    final updatedMembers = [...state.currentTeam!.members, newMember];
+
     emit(state.copyWith(
       currentTeam: TeamModel(
         id: state.currentTeam!.id,
@@ -300,6 +310,33 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
         createdAt: state.currentTeam!.createdAt,
       ),
     ));
+    // DON'T reload here - API will return stale data
+  }
+
+  void _onMemberLeft(ev.TeamMemberLeftEvent event, Emitter<TeamState> emit) {
+    if (state.currentTeam == null) return;
+
+    // Update state directly - don't wait for API
+    // API might return stale data due to transaction timing
+    final updatedMembers = state.currentTeam!.members
+        .where((m) => m.userId != event.userId)
+        .toList();
+
+    emit(state.copyWith(
+      currentTeam: TeamModel(
+        id: state.currentTeam!.id,
+        name: state.currentTeam!.name,
+        gameId: state.currentTeam!.gameId,
+        gameName: state.currentTeam!.gameName,
+        maxMembers: state.currentTeam!.maxMembers,
+        ownerId: state.currentTeam!.ownerId,
+        ownerName: state.currentTeam!.ownerName,
+        isRecruiting: state.currentTeam!.isRecruiting,
+        members: updatedMembers,
+        createdAt: state.currentTeam!.createdAt,
+      ),
+    ));
+    // DON'T reload here - API will return stale data
   }
 
   void _onMemberReady(ev.TeamMemberReadyEvent event, Emitter<TeamState> emit) {
@@ -348,6 +385,52 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   void _onJoinRequestCreated(ev.JoinRequestCreatedEvent event, Emitter<TeamState> emit) {
     final updated = [event.request, ...state.joinRequests];
     emit(state.copyWith(joinRequests: updated));
+  }
+
+  Future<void> _onKickRequested(
+    ev.TeamMemberKickRequested event,
+    Emitter<TeamState> emit,
+  ) async {
+    if (state.currentTeam == null) return;
+    try {
+      await _teamApiService.kickMember(
+        teamId: state.currentTeam!.id,
+        memberId: event.memberId,
+      );
+      emit(state.copyWith(successMessage: 'Đã kick thành viên'));
+    } catch (e) {
+      debugPrint('[TeamBloc] _onKickRequested ERROR: $e');
+      emit(state.copyWith(errorMessage: 'Không thể kick thành viên: $e'));
+    }
+  }
+
+  void _onMemberKicked(ev.TeamMemberKickedEvent event, Emitter<TeamState> emit) async {
+    if (state.currentTeam == null) return;
+    // Reload entire team to ensure data consistency
+    try {
+      final team = await _teamApiService.getMyTeam();
+      emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, clearTeam: team == null));
+    } catch (e) {
+      debugPrint('[TeamBloc] _onMemberKicked reload failed: $e');
+      // Fallback: update locally if API fails
+      final updatedMembers = state.currentTeam!.members
+          .where((m) => m.userId != event.userId)
+          .toList();
+      emit(state.copyWith(
+        currentTeam: TeamModel(
+          id: state.currentTeam!.id,
+          name: state.currentTeam!.name,
+          gameId: state.currentTeam!.gameId,
+          gameName: state.currentTeam!.gameName,
+          maxMembers: state.currentTeam!.maxMembers,
+          ownerId: state.currentTeam!.ownerId,
+          ownerName: state.currentTeam!.ownerName,
+          isRecruiting: state.currentTeam!.isRecruiting,
+          members: updatedMembers,
+          createdAt: state.currentTeam!.createdAt,
+        ),
+      ));
+    }
   }
 
   @override

@@ -306,6 +306,9 @@ class _TeamScreenState extends State<TeamScreen> {
                                         ),
                                       );
                                     },
+                                    onKickMember: (memberId) {
+                                      context.read<TeamBloc>().add(TeamMemberKickRequested(memberId));
+                                    },
                                   ),
                                   _CommunityTab(communities: _communities, isSmallScreen: isSmallScreen),
                                 ],
@@ -608,6 +611,7 @@ class _TeamTab extends StatelessWidget {
   final VoidCallback onLeaveTeam;
   final void Function(bool) onReadyToggled;
   final void Function(String userId) onViewProfile;
+  final void Function(String memberId) onKickMember;
 
   const _TeamTab({
     required this.hasTeam,
@@ -620,6 +624,7 @@ class _TeamTab extends StatelessWidget {
     required this.onLeaveTeam,
     required this.onReadyToggled,
     required this.onViewProfile,
+    required this.onKickMember,
   });
 
   @override
@@ -670,7 +675,9 @@ class _TeamTab extends StatelessWidget {
                 isSmallScreen: isSmallScreen,
                 myUserId: myUserId,
                 myUserName: myUserName,
+                isTeamLeader: isLeader,
                 onTap: () => onViewProfile(member.userId),
+                onKick: member.userId != myUserId ? () => onKickMember(member.userId) : null,
               ),
             );
           }),
@@ -863,7 +870,9 @@ class _MemberRow extends StatelessWidget {
   final bool isSmallScreen;
   final String myUserId;
   final String myUserName;
+  final bool isTeamLeader;
   final VoidCallback onTap;
+  final VoidCallback? onKick;
 
   const _MemberRow({
     required this.member,
@@ -871,7 +880,9 @@ class _MemberRow extends StatelessWidget {
     required this.isSmallScreen,
     required this.myUserId,
     required this.myUserName,
+    required this.isTeamLeader,
     required this.onTap,
+    this.onKick,
   });
 
   @override
@@ -949,6 +960,22 @@ class _MemberRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (isTeamLeader && onKick != null)
+              GestureDetector(
+                onTap: onKick,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.remove_circle_outline_rounded,
+                    color: AppColors.error,
+                    size: isSmallScreen ? 18 : 20,
+                  ),
+                ),
+              ),
           ],
         ),
       ),

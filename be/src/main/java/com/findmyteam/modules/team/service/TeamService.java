@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -102,7 +103,7 @@ public class TeamService {
         Team team = teamRepository.findActiveTeamByUserId(userId)
             .orElseThrow(() -> new ResourceNotFoundException("Bạn chưa có nhóm nào"));
 
-        List<TeamMember> members = teamMemberRepository.findByTeamId(team.getId());
+        List<TeamMember> members = teamMemberRepository.findActiveMembersByTeamId(team.getId());
         String gameName = gameRepository.findById(team.getGameId())
             .map(Game::getName).orElse(null);
 
@@ -114,7 +115,7 @@ public class TeamService {
         Team team = teamRepository.findById(teamId)
             .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
 
-        List<TeamMember> members = teamMemberRepository.findByTeamId(team.getId());
+        List<TeamMember> members = teamMemberRepository.findActiveMembersByTeamId(team.getId());
         String gameName = gameRepository.findById(team.getGameId())
             .map(Game::getName).orElse(null);
 
@@ -233,7 +234,12 @@ public class TeamService {
             throw new BusinessException("Chủ nhóm không thể rời nhóm. Hãy giải tán hoặc chuyển quyền.");
         }
 
-        int countBefore = teamMemberRepository.countActiveMembersByTeamId(teamId);
+        // Get remaining members BEFORE the user leaves
+        List<UUID> remainingMemberIds = teamMemberRepository.findActiveMembersByTeamId(teamId).stream()
+                .filter(m -> !m.getUserId().equals(userId))
+                .map(TeamMember::getUserId)
+                .collect(Collectors.toList());
+        int countBefore = remainingMemberIds.size() + 1; // +1 for the user who is leaving
 
         doLeaveTeam(userId, teamId);
 
@@ -242,9 +248,70 @@ public class TeamService {
             teamRepository.save(team);
         }
 
+        log.info("=== LEAVE TEAM === Publishing TEAM_MEMBER_LEFT to events:team:{}", teamId);
+        log.info("LEAVE: Remaining member count: {}, memberIds: {}", remainingMemberIds.size(), remainingMemberIds);
+
+        // Broadcast to team room so remaining members update their member list
         eventPublisher.publish(EventType.TEAM_MEMBER_LEFT, Map.of(
-            "teamId", teamId,
-            "userId", userId
+                "teamId", teamId,
+                "leftUserId", userId,
+                "remainingMembers", remainingMemberIds
+        ));
+    }
+
+    @Transactional
+    public void kickMember(UUID ownerId, UUID teamId, UUID memberId) {
+        Team team = teamRepository.findById(teamId)
+            .orElseThrow(() -> new ResourceNotFoundException("Team", "id", teamId));
+
+        if (!team.getOwnerId().equals(ownerId)) {
+            throw new BusinessException("Chỉ chủ nhóm mới có thể kick thành viên");
+        }
+
+        if (team.getOwnerId().equals(memberId)) {
+            throw new BusinessException("Không thể kick chủ nhóm");
+        }
+
+        TeamMember member = teamMemberRepository.findActiveMemberByTeamIdAndUserId(teamId, memberId)
+            .orElseThrow(() -> new BusinessException("Thành viên không tồn tại trong nhóm"));
+
+        // IMPORTANT: Get all member IDs BEFORE making changes
+        // This includes the owner who is still active
+        List<UUID> allMemberIds = teamMemberRepository.findActiveMembersByTeamId(teamId).stream()
+                .map(TeamMember::getUserId)
+                .collect(Collectors.toList());
+        log.info("KICK: Will notify {} members including owner", allMemberIds.size());
+
+        int countBefore = allMemberIds.size();
+
+        // Update member status to LEFT
+        member.setStatus(TeamMember.STATUS_LEFT);
+        member.setLeftAt(OffsetDateTime.now());
+        teamMemberRepository.save(member);
+        presenceService.leaveTeamRoom(memberId, teamId);
+
+        log.info("KICK: Successfully updated member status to LEFT, memberId={}", memberId);
+
+        if (countBefore - 1 < team.getMaxSize() && "full".equals(team.getStatus())) {
+            team.setStatus("recruiting");
+            teamRepository.save(team);
+        }
+
+        // Broadcast to team room - ALL remaining members (including owner) get the update
+        log.info("KICK: Publishing TEAM_MEMBER_LEFT to events:team:{}", teamId);
+        eventPublisher.publish(EventType.TEAM_MEMBER_LEFT, Map.of(
+                "teamId", teamId,
+                "kickedUserId", memberId,
+                "kickedBy", ownerId,
+                "isKick", true
+        ));
+
+        // Send TEAM_MEMBER_KICKED to the kicked user so they exit the team screen
+        log.info("KICK: Publishing TEAM_MEMBER_KICKED to events:user:{}", memberId);
+        eventPublisher.publish(EventType.TEAM_MEMBER_KICKED, Map.of(
+                "teamId", teamId,
+                "userId", memberId,
+                "kickedBy", ownerId
         ));
     }
 

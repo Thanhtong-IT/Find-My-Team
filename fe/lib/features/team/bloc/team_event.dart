@@ -116,3 +116,17 @@ class JoinRequestCreatedEvent extends TeamEvent {
   List<Object?> get props => [request];
 }
 
+class TeamMemberKickedEvent extends TeamEvent {
+  final String userId;
+  const TeamMemberKickedEvent(this.userId);
+  @override
+  List<Object?> get props => [userId];
+}
+
+class TeamMemberKickRequested extends TeamEvent {
+  final String memberId;
+  const TeamMemberKickRequested(this.memberId);
+  @override
+  List<Object?> get props => [memberId];
+}
+

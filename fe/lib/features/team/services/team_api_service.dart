@@ -114,4 +114,10 @@ class TeamApiService {
     final json = resp.data as Map<String, dynamic>;
     if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions);
   }
+
+  Future<void> kickMember({required String teamId, required String memberId}) async {
+    final resp = await DioClient.delete('${ApiConstants.teams}/$teamId/members/$memberId');
+    final json = resp.data as Map<String, dynamic>;
+    if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions);
+  }
 }

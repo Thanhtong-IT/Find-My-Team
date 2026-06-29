@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/events/event_bus.dart';
 import 'game_selection_screen.dart';
+import '../../team/bloc/team_bloc.dart';
+import '../../team/bloc/team_state.dart';
 import '../../team/services/team_api_service.dart';
 import '../../team/models/team_model.dart';
 import '../../profile/models/game_model.dart';
@@ -307,108 +310,115 @@ class _ExploreScreenState extends State<ExploreScreen> {
         toolbarHeight: isSmallScreen ? 80 : 90,
       ),
       body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _loadInitialData,
-          color: AppColors.primary,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-              const SizedBox(height: 12),
-              _ExploreSearchBar(
-                controller: _searchController,
-                isSmallScreen: isSmallScreen,
-                onChanged: _onSearchChanged,
+        child: BlocBuilder<TeamBloc, TeamState>(
+          buildWhen: (prev, curr) => prev.currentTeam?.id != curr.currentTeam?.id,
+          builder: (context, teamState) {
+            final currentTeamId = teamState.currentTeam?.id;
+            return RefreshIndicator(
+              onRefresh: _loadInitialData,
+              color: AppColors.primary,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                  const SizedBox(height: 12),
+                  _ExploreSearchBar(
+                    controller: _searchController,
+                    isSmallScreen: isSmallScreen,
+                    onChanged: _onSearchChanged,
+                  ),
+                  const SizedBox(height: 16),
+                  if (!_isSearchMode) ...[
+                    _isLoadingGames
+                        ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 8), child: CircularProgressIndicator()))
+                        : _GameFilterChips(
+                            filters: _gameFilters,
+                            selected: _selectedGame,
+                            onSelected: (value) {
+                              setState(() {
+                                _selectedGame = value;
+                                if (value == 'Tất cả game') {
+                                  _selectedGameModel = null;
+                                } else {
+                                  _selectedGameModel = _games.firstWhere((g) => g.name == value);
+                                }
+                              });
+                              _loadTeams();
+                            },
+                          ),
+                    const SizedBox(height: 24),
+                    _SectionHeader(
+                      title: 'Đội đang mở',
+                      onViewAll: () {},
+                      isSmallScreen: isSmallScreen,
+                    ),
+                    const SizedBox(height: 12),
+                    (_isLoadingTeams
+                        ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
+                        : _filteredTeams.isEmpty
+                            ? _EmptyState(message: 'Không có đội nào phù hợp', isSmallScreen: isSmallScreen)
+                            : Column(
+                                children: _filteredTeams
+                                    .map((team) => Padding(
+                                          padding: const EdgeInsets.only(bottom: 12),
+                                          child: _TeamOpenCard(
+                                            team: team,
+                                            isSmallScreen: isSmallScreen,
+                                            isMyTeam: team.id == currentTeamId,
+                                            onJoin: () => _joinTeam(team.id),
+                                            onShare: () => _showSnackBar('Chia sẻ thông tin đội'),
+                                          ),
+                                        ))
+                                    .toList(),
+                              )),
+                    const SizedBox(height: 8),
+                    _SectionHeader(
+                      title: 'Người chơi đang online',
+                      onViewAll: () {},
+                      isSmallScreen: isSmallScreen,
+                    ),
+                    const SizedBox(height: 12),
+                    (_isLoadingPlayers
+                        ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
+                        : _filteredPlayers.isEmpty
+                            ? _EmptyState(message: 'Không có người chơi nào phù hợp', isSmallScreen: isSmallScreen)
+                            : Column(
+                                children: _filteredPlayers
+                                    .map((player) => Padding(
+                                          padding: const EdgeInsets.only(bottom: 12),
+                                          child: _OnlinePlayerCardFromApi(
+                                            player: player,
+                                            isSmallScreen: isSmallScreen,
+                                            onProfile: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) => UserProfileScreen(userId: player.userId),
+                                                ),
+                                              );
+                                            },
+                                            onInvite: () {},
+                                          ),
+                                        ))
+                                    .toList(),
+                              )),
+                  ] else ...[
+                    _SectionHeader(
+                      title: 'Kết quả tìm kiếm',
+                      onViewAll: () {},
+                      isSmallScreen: isSmallScreen,
+                    ),
+                    const SizedBox(height: 12),
+                    _buildSearchResults(isSmallScreen),
+                    const SizedBox(height: 120),
+                  ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
-              if (!_isSearchMode) ...[
-                _isLoadingGames
-                    ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 8), child: CircularProgressIndicator()))
-                    : _GameFilterChips(
-                        filters: _gameFilters,
-                        selected: _selectedGame,
-                        onSelected: (value) {
-                          setState(() {
-                            _selectedGame = value;
-                            if (value == 'Tất cả game') {
-                              _selectedGameModel = null;
-                            } else {
-                              _selectedGameModel = _games.firstWhere((g) => g.name == value);
-                            }
-                          });
-                          _loadTeams();
-                        },
-                      ),
-                const SizedBox(height: 24),
-                _SectionHeader(
-                  title: 'Đội đang mở',
-                  onViewAll: () {},
-                  isSmallScreen: isSmallScreen,
-                ),
-                const SizedBox(height: 12),
-                _isLoadingTeams
-                    ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
-                    : _filteredTeams.isEmpty
-                        ? _EmptyState(message: 'Không có đội nào phù hợp', isSmallScreen: isSmallScreen)
-                        : Column(
-                            children: _filteredTeams
-                                .map((team) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _TeamOpenCard(
-                                        team: team,
-                                        isSmallScreen: isSmallScreen,
-                                        onJoin: () => _joinTeam(team.id),
-                                        onShare: () => _showSnackBar('Chia sẻ thông tin đội'),
-                                      ),
-                                    ))
-                                .toList(),
-                          ),
-                const SizedBox(height: 8),
-                _SectionHeader(
-                  title: 'Người chơi đang online',
-                  onViewAll: () {},
-                  isSmallScreen: isSmallScreen,
-                ),
-                const SizedBox(height: 12),
-                _isLoadingPlayers
-                    ? const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 24), child: CircularProgressIndicator()))
-                    : _filteredPlayers.isEmpty
-                        ? _EmptyState(message: 'Không có người chơi nào phù hợp', isSmallScreen: isSmallScreen)
-                        : Column(
-                            children: _filteredPlayers
-                                .map((player) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
-                                      child: _OnlinePlayerCardFromApi(
-                                        player: player,
-                                        isSmallScreen: isSmallScreen,
-                                        onProfile: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => UserProfileScreen(userId: player.userId),
-                                            ),
-                                          );
-                                        },
-                                        onInvite: () {},
-                                      ),
-                                    ))
-                                .toList(),
-                          ),
-              ] else ...[
-                _SectionHeader(
-                  title: 'Kết quả tìm kiếm',
-                  onViewAll: () {},
-                  isSmallScreen: isSmallScreen,
-                ),
-                const SizedBox(height: 12),
-                _buildSearchResults(isSmallScreen),
-              ],
-              const SizedBox(height: 120),
-              ],
-            ),
-          ),
+            );
+          },
         ),
       ),
       floatingActionButton: _isSearchMode
@@ -600,12 +610,14 @@ class _SectionHeader extends StatelessWidget {
 class _TeamOpenCard extends StatelessWidget {
   final TeamModel team;
   final bool isSmallScreen;
+  final bool isMyTeam;
   final VoidCallback onJoin;
   final VoidCallback onShare;
 
   const _TeamOpenCard({
     required this.team,
     required this.isSmallScreen,
+    required this.isMyTeam,
     required this.onJoin,
     required this.onShare,
   });
@@ -708,15 +720,15 @@ class _TeamOpenCard extends StatelessWidget {
             width: double.infinity,
             height: isSmallScreen ? 36 : 40,
             child: ElevatedButton(
-              onPressed: onJoin,
+              onPressed: isMyTeam ? null : onJoin,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: isMyTeam ? AppColors.textSecondary : AppColors.primary,
                 foregroundColor: AppColors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               child: Text(
-                'Xin vào đội',
+                isMyTeam ? 'Đội của bạn' : 'Xin vào đội',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmallScreen ? 12 : 13),
               ),
             ),

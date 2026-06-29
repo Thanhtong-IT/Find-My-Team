@@ -87,6 +87,16 @@ public class TeamController {
         return ApiResponse.success(null);
     }
 
+    @Operation(summary = "Kick thành viên khỏi team (chỉ leader)")
+    @DeleteMapping("/api/teams/{teamId}/members/{memberId}")
+    public ApiResponse<Void> kickMember(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID teamId,
+            @PathVariable UUID memberId) {
+        teamService.kickMember(principal.getId(), teamId, memberId);
+        return ApiResponse.success(null);
+    }
+
     @Operation(summary = "Toggle ready status")
     @PutMapping("/api/teams/{teamId}/ready")
     public ApiResponse<Void> toggleReady(

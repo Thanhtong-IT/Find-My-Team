@@ -60,6 +60,7 @@ class AppEventBus {
       e.type == WsEventType.teamMemberLeft ||
       e.type == WsEventType.teamMemberReady ||
       e.type == WsEventType.teamDisbanded ||
+      e.type == WsEventType.teamMemberKicked ||
       e.type == WsEventType.joinRequestAccepted);
 
   Stream<WsIncomingEvent> get joinRequestStream =>

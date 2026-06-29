@@ -6,6 +6,7 @@ public enum EventType {
     TEAM_MEMBER_LEFT,
     TEAM_DISBANDED,
     TEAM_MEMBER_READY,
+    TEAM_MEMBER_KICKED,
 
     // Join request events
     JOIN_REQUEST_CREATED,

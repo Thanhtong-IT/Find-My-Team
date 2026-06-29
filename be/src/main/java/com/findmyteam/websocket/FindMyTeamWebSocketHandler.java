@@ -157,8 +157,11 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
 
     public void broadcastToRoom(String roomId, Object payload) {
         Set<String> sessionIds = roomManager.getSessionIdsInRoom(roomId);
+        log.info("=== Broadcast to room: {} ===", roomId);
+        log.info("Session IDs in room: {}", sessionIds.size());
         for (String sessionId : sessionIds) {
             WebSocketSession session = sessions.get(sessionId);
+            log.info("Session {}: {}", sessionId, session != null ? (session.isOpen() ? "OPEN" : "CLOSED") : "NULL");
             if (session != null && session.isOpen()) {
                 sendMessage(session, new WsMessage("event", Map.of(
                     "roomId", roomId,
@@ -197,6 +200,7 @@ public class FindMyTeamWebSocketHandler extends TextWebSocketHandler {
     private void sendMessage(WebSocketSession session, WsMessage message) {
         try {
             String json = objectMapper.writeValueAsString(message);
+            log.info("=== WS SEND === sessionId={}, json={}", session.getId(), json);
             session.sendMessage(new TextMessage(json));
         } catch (IOException e) {
             log.error("Failed to send message: {}", e.getMessage());

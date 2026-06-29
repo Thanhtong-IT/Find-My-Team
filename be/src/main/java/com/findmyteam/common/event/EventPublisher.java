@@ -49,9 +49,9 @@ public class EventPublisher {
             String channel = resolveChannel(eventType, data);
             redisTemplate.convertAndSend(channel, json);
 
-            log.debug("Published event {} to channel {}", eventType, channel);
+            log.info("=== EVENT PUBLISHED === type={}, channel={}, data={}", eventType, channel, data.keySet());
         } catch (Exception e) {
-            log.error("Failed to publish event {}: {}", eventType, e.getMessage());
+            log.error("Failed to publish event {}: {}", eventType, e.getMessage(), e);
         }
     }
 
@@ -63,6 +63,8 @@ public class EventPublisher {
                 "events:team:" + data.get("teamId");
             case TEAM_CREATED, TEAM_DISBANDED ->
                 "events:global";
+            case TEAM_MEMBER_KICKED ->
+                "events:user:" + data.get("userId");
             case NOTIFICATION_NEW, JOIN_REQUEST_ACCEPTED, JOIN_REQUEST_REJECTED,
                  MATCH_CREATED, INVITATION_RECEIVED ->
                 "events:user:" + data.get("userId");
