@@ -59,6 +59,7 @@ class AppEventBus {
       e.type == WsEventType.teamMemberJoined ||
       e.type == WsEventType.teamMemberLeft ||
       e.type == WsEventType.teamMemberReady ||
+      e.type == WsEventType.teamMemberMicChanged ||
       e.type == WsEventType.teamDisbanded ||
       e.type == WsEventType.teamMemberKicked ||
       e.type == WsEventType.joinRequestCreated ||

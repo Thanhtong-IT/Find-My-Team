@@ -19,6 +19,7 @@ enum WsEventType {
   teamMemberJoined,
   teamMemberLeft,
   teamMemberReady,
+  teamMemberMicChanged,
   teamDisbanded,
   teamMemberKicked,
   // Join request
@@ -208,6 +209,8 @@ class WebSocketClient {
         return WsEventType.teamMemberLeft;
       case 'TEAM_MEMBER_READY':
         return WsEventType.teamMemberReady;
+      case 'TEAM_MEMBER_MIC_CHANGED':
+        return WsEventType.teamMemberMicChanged;
       case 'TEAM_DISBANDED':
         return WsEventType.teamDisbanded;
       case 'TEAM_MEMBER_KICKED':

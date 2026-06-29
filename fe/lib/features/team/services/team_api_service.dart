@@ -74,6 +74,12 @@ class TeamApiService {
     if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions);
   }
 
+  Future<void> toggleMic(String teamId) async {
+    final resp = await DioClient.put('${ApiConstants.teams}/$teamId/mic');
+    final json = resp.data as Map<String, dynamic>;
+    if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions);
+  }
+
   Future<void> leaveTeam(String teamId) async {
     final resp = await DioClient.post('${ApiConstants.teams}/$teamId/leave');
     final json = resp.data as Map<String, dynamic>;

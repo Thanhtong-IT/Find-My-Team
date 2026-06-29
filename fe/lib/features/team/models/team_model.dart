@@ -71,6 +71,7 @@ class TeamMemberModel {
   final String? avatarUrl;
   final String? role;
   final bool isReady;
+  final bool isMicEnabled;
   final bool isOnline;
   final bool isLeader;
 
@@ -81,6 +82,7 @@ class TeamMemberModel {
     this.avatarUrl,
     this.role,
     this.isReady = false,
+    this.isMicEnabled = false,
     this.isOnline = false,
     this.isLeader = false,
   });
@@ -94,6 +96,7 @@ class TeamMemberModel {
       avatarUrl: json['avatarUrl'] as String?,
       role: roleStr,
       isReady: json['isReady'] as bool? ?? json['ready'] as bool? ?? false,
+      isMicEnabled: json['isMicEnabled'] as bool? ?? false,
       isOnline: json['isOnline'] as bool? ?? false,
       isLeader: roleStr == 'owner',
     );

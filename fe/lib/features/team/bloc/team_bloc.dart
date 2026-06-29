@@ -24,6 +24,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     on<ev.TeamLoadRequested>(_onLoadRequested);
     on<ev.TeamCreateRequested>(_onCreateRequested);
     on<ev.TeamReadyToggled>(_onReadyToggled);
+    on<ev.TeamMicToggled>(_onMicToggled);
     on<ev.TeamLeaveRequested>(_onLeaveRequested);
     on<ev.TeamDisbandRequested>(_onDisbandRequested);
     on<ev.TeamJoinRequestsLoadRequested>(_onJoinRequestsLoadRequested);
@@ -34,6 +35,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     on<ev.TeamMemberJoinedEvent>(_onMemberJoined);
     on<ev.TeamMemberLeftEvent>(_onMemberLeft);
     on<ev.TeamMemberReadyEvent>(_onMemberReady);
+    on<ev.TeamMemberMicChangedEvent>(_onMemberMicChanged);
     on<ev.TeamDisbandedEvent>(_onTeamDisbanded);
     on<ev.JoinRequestCreatedEvent>(_onJoinRequestCreated);
     on<ev.TeamMemberKickedEvent>(_onMemberKicked);
@@ -75,6 +77,13 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
             teamId: event.data['teamId']?.toString() ?? '',
             userId: event.data['userId']?.toString() ?? '',
             isReady: event.data['isReady'] as bool? ?? false,
+          ));
+          break;
+        case WsEventType.teamMemberMicChanged:
+          add(ev.TeamMemberMicChangedEvent(
+            teamId: event.data['teamId']?.toString() ?? '',
+            userId: event.data['userId']?.toString() ?? '',
+            isMicEnabled: event.data['isMicEnabled'] as bool? ?? false,
           ));
           break;
         case WsEventType.teamDisbanded:
@@ -162,6 +171,24 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     try {
       await _teamApiService.setReady(state.currentTeam!.id, event.ready);
     } catch (_) {}
+  }
+
+  Future<void> _onMicToggled(
+    ev.TeamMicToggled event,
+    Emitter<TeamState> emit,
+  ) async {
+    if (state.currentTeam == null) return;
+    try {
+      await _teamApiService.toggleMic(state.currentTeam!.id);
+      add(ev.TeamMemberMicChangedEvent(
+        teamId: state.currentTeam!.id,
+        userId: event.userId,
+        isMicEnabled: event.isMicEnabled,
+      ));
+    } catch (e) {
+      debugPrint('[TeamBloc] _onMicToggled ERROR: $e');
+      emit(state.copyWith(errorMessage: 'Không thể cập nhật trạng thái mic: $e'));
+    }
   }
 
   Future<void> _onLeaveRequested(
@@ -357,6 +384,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
           avatarUrl: m.avatarUrl,
           role: m.role,
           isReady: event.isReady,
+          isMicEnabled: m.isMicEnabled,
           isOnline: m.isOnline,
           isLeader: m.isLeader,
         );
@@ -377,6 +405,46 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
         isRecruiting: state.currentTeam!.isRecruiting,
         members: updatedMembers,
         createdAt: state.currentTeam!.createdAt,
+      ),
+    ));
+  }
+
+  void _onMemberMicChanged(
+    ev.TeamMemberMicChangedEvent event,
+    Emitter<TeamState> emit,
+  ) {
+    if (state.currentTeam == null || event.teamId != state.currentTeam!.id) return;
+
+    final updatedMembers = state.currentTeam!.members.map((m) {
+      if (m.userId != event.userId) return m;
+      return TeamMemberModel(
+        id: m.id,
+        userId: m.userId,
+        displayName: m.displayName,
+        avatarUrl: m.avatarUrl,
+        role: m.role,
+        isReady: m.isReady,
+        isMicEnabled: event.isMicEnabled,
+        isOnline: m.isOnline,
+        isLeader: m.isLeader,
+      );
+    }).toList();
+
+    final team = state.currentTeam!;
+    emit(state.copyWith(
+      currentTeam: TeamModel(
+        id: team.id,
+        name: team.name,
+        description: team.description,
+        gameId: team.gameId,
+        gameName: team.gameName,
+        requiredRank: team.requiredRank,
+        maxMembers: team.maxMembers,
+        ownerId: team.ownerId,
+        ownerName: team.ownerName,
+        isRecruiting: team.isRecruiting,
+        members: updatedMembers,
+        createdAt: team.createdAt,
       ),
     ));
   }

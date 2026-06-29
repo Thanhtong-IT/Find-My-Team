@@ -298,6 +298,16 @@ class _TeamScreenState extends State<TeamScreen> {
                                     onReadyToggled: (ready) {
                                       context.read<TeamBloc>().add(TeamReadyToggled(ready));
                                     },
+                                    onMicToggled: () {
+                                      final member = state.currentTeam!.members.firstWhere(
+                                        (m) => m.userId == myUserId,
+                                        orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
+                                      );
+                                      context.read<TeamBloc>().add(TeamMicToggled(
+                                        userId: myUserId,
+                                        isMicEnabled: !member.isMicEnabled,
+                                      ));
+                                    },
                                     onViewProfile: (userId) {
                                       Navigator.push(
                                         context,
@@ -610,6 +620,7 @@ class _TeamTab extends StatelessWidget {
   final VoidCallback onDisbandTeam;
   final VoidCallback onLeaveTeam;
   final void Function(bool) onReadyToggled;
+  final VoidCallback onMicToggled;
   final void Function(String userId) onViewProfile;
   final void Function(String memberId) onKickMember;
 
@@ -623,6 +634,7 @@ class _TeamTab extends StatelessWidget {
     required this.onDisbandTeam,
     required this.onLeaveTeam,
     required this.onReadyToggled,
+    required this.onMicToggled,
     required this.onViewProfile,
     required this.onKickMember,
   });
@@ -648,6 +660,7 @@ class _TeamTab extends StatelessWidget {
       orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
     );
     final isMyReady = myMember.isReady;
+    final isMyMicEnabled = myMember.isMicEnabled;
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -715,6 +728,25 @@ class _TeamTab extends StatelessWidget {
             ),
             const SizedBox(height: 10),
           ],
+          SizedBox(
+            width: double.infinity,
+            height: isSmallScreen ? 44 : 48,
+            child: ElevatedButton.icon(
+              onPressed: onMicToggled,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isMyMicEnabled ? AppColors.success : AppColors.textSecondary,
+                foregroundColor: AppColors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: Icon(isMyMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded, size: 18),
+              label: Text(
+                isMyMicEnabled ? 'Mic đang bật (Nhấn để tắt)' : 'Mic đang tắt (Nhấn để bật)',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmallScreen ? 12 : 14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
           Row(
             children: [
               if (!isLeader)
@@ -956,6 +988,24 @@ class _MemberRow extends StatelessWidget {
                   Text(
                     member.isReady ? "Đã sẵn sàng" : "Chưa sẵn sàng",
                     style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: member.isReady ? AppColors.success : AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      Icon(
+                        member.isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
+                        size: isSmallScreen ? 12 : 14,
+                        color: member.isMicEnabled ? AppColors.success : AppColors.textSecondary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        member.isMicEnabled ? 'Mic đang bật' : 'Mic đang tắt',
+                        style: TextStyle(
+                          fontSize: isSmallScreen ? 10 : 11,
+                          color: member.isMicEnabled ? AppColors.success : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

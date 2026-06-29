@@ -37,6 +37,14 @@ class TeamReadyToggled extends TeamEvent {
   List<Object?> get props => [ready];
 }
 
+class TeamMicToggled extends TeamEvent {
+  final String userId;
+  final bool isMicEnabled;
+  const TeamMicToggled({required this.userId, required this.isMicEnabled});
+  @override
+  List<Object?> get props => [userId, isMicEnabled];
+}
+
 class TeamLeaveRequested extends TeamEvent {
   const TeamLeaveRequested();
 }
@@ -103,6 +111,19 @@ class TeamMemberReadyEvent extends TeamEvent {
   const TeamMemberReadyEvent({required this.teamId, required this.userId, required this.isReady});
   @override
   List<Object?> get props => [teamId, userId, isReady];
+}
+
+class TeamMemberMicChangedEvent extends TeamEvent {
+  final String teamId;
+  final String userId;
+  final bool isMicEnabled;
+  const TeamMemberMicChangedEvent({
+    required this.teamId,
+    required this.userId,
+    required this.isMicEnabled,
+  });
+  @override
+  List<Object?> get props => [teamId, userId, isMicEnabled];
 }
 
 class TeamDisbandedEvent extends TeamEvent {
