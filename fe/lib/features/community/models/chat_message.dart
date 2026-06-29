@@ -32,6 +32,7 @@ class ChatMessage {
     return ChatMessage(
       clientMessageId: clientMessageId,
       serverMessageId: serverMessageId ?? this.serverMessageId,
+      channelId: this.channelId,
       senderId: senderId,
       senderName: senderName,
       senderAvatar: senderAvatar,

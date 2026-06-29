@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/repository/secure_storage_repository.dart';
+import '../../../core/websocket/websocket_client.dart';
 import '../models/community_model.dart';
 import '../models/channel_model.dart';
 import '../models/chat_message.dart';
@@ -26,6 +27,7 @@ class CommunityChatScreen extends StatefulWidget {
 }
 
 class _CommunityChatScreenState extends State<CommunityChatScreen> {
+  final WebSocketClient _wsClient = WebSocketClient.instance;
   ChannelModel? _currentChannel;
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -59,6 +61,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
         _currentChannel = textChannels.isNotEmpty ? textChannels.first : channels.first;
         _isLoadingChannels = false;
       });
+      _subscribeChannel(_currentChannel);
     } else if (mounted) {
       setState(() {
         _channels = channels;
@@ -67,8 +70,29 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
     }
   }
 
-  void _onChannelSelected(ChannelModel channel) {
+  void _onChannelSelected(BuildContext blocContext, ChannelModel channel) {
+    final previousChannel = _currentChannel;
+    if (previousChannel?.id == channel.id) return;
+
+    _unsubscribeChannel(previousChannel);
+    _subscribeChannel(channel);
+
     setState(() => _currentChannel = channel);
+    blocContext.read<ChatBloc>().add(ChatMessagesLoadRequested(
+      communityId: widget.community.id,
+      channelId: channel.id,
+      refresh: true,
+    ));
+  }
+
+  void _subscribeChannel(ChannelModel? channel) {
+    if (channel == null || channel.type != ChannelType.text) return;
+    _wsClient.subscribeRoom(channel.id, 'channel');
+  }
+
+  void _unsubscribeChannel(ChannelModel? channel) {
+    if (channel == null || channel.type != ChannelType.text) return;
+    _wsClient.unsubscribeRoom(channel.id, 'channel');
   }
 
   void _showCreateChannelDialog(BuildContext blocContext, ChannelType type) {
@@ -134,6 +158,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
 
   @override
   void dispose() {
+    _unsubscribeChannel(_currentChannel);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -227,7 +252,7 @@ class _CommunityChatScreenState extends State<CommunityChatScreen> {
                       selectedChannel: currentChannel,
                       channels: communityState.channels.isNotEmpty ? communityState.channels : _channels,
                       isLoading: communityState.status == CommunityStatus.loading,
-                      onChannelSelected: _onChannelSelected,
+                      onChannelSelected: (channel) => _onChannelSelected(context, channel),
                       onCreateChannelPressed: (type) => _showCreateChannelDialog(context, type),
                     );
                   },

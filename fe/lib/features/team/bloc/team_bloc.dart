@@ -56,19 +56,34 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       switch (event.type) {
         case WsEventType.teamMemberJoined:
           add(ev.TeamMemberJoinedEvent(
+            teamId: event.data['teamId']?.toString() ?? '',
             userId: event.data['userId']?.toString() ?? '',
             displayName: event.data['displayName'] as String? ?? '',
           ));
           break;
         case WsEventType.teamMemberLeft:
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+          add(ev.TeamMemberLeftEvent(
+            teamId: event.data['teamId']?.toString() ?? '',
+            userId: event.data['userId']?.toString() ?? '',
+          ));
+=======
+>>>>>>> Stashed changes
           // Handle both old format (userId) and new format (leftUserId/kickedUserId)
           final leftUserId = event.data['leftUserId']?.toString() ??
                             event.data['kickedUserId']?.toString() ??
                             event.data['userId']?.toString() ?? '';
           add(ev.TeamMemberLeftEvent(leftUserId));
+<<<<<<< Updated upstream
+=======
+>>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
+>>>>>>> Stashed changes
           break;
         case WsEventType.teamMemberReady:
           add(ev.TeamMemberReadyEvent(
+            teamId: event.data['teamId']?.toString() ?? '',
             userId: event.data['userId']?.toString() ?? '',
             isReady: event.data['isReady'] as bool? ?? false,
           ));
@@ -77,6 +92,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
           add(ev.TeamDisbandedEvent(event.data['teamId']?.toString() ?? ''));
           break;
         case WsEventType.joinRequestAccepted:
+          AppEventBus.instance.triggerProfileReload();
           add(const ev.TeamLoadRequested());
           break;
         case WsEventType.teamMemberKicked:
@@ -280,7 +296,32 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
 
   void _onMemberJoined(ev.TeamMemberJoinedEvent event, Emitter<TeamState> emit) {
     if (state.currentTeam == null) return;
+<<<<<<< Updated upstream
 
+=======
+<<<<<<< HEAD
+    if (event.teamId != state.currentTeam!.id) return;
+    // Reload entire team to ensure data consistency
+    try {
+      final team = await _teamApiService.getMyTeam();
+      if (team != null) {
+        _wsClient.subscribeRoom(team.id, 'team');
+      }
+      emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, clearTeam: team == null));
+    } catch (e) {
+      debugPrint('[TeamBloc] _onMemberJoined reload failed: $e');
+    }
+  }
+
+  void _onMemberLeft(ev.TeamMemberLeftEvent event, Emitter<TeamState> emit) {
+    if (state.currentTeam == null) return;
+    if (event.teamId != state.currentTeam!.id) return;
+    final updatedMembers = state.currentTeam!.members
+        .where((m) => m.userId != event.userId)
+        .toList();
+=======
+
+>>>>>>> Stashed changes
     // Check if already in members list
     if (state.currentTeam!.members.any((m) => m.userId == event.userId)) {
       return;
@@ -296,6 +337,10 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
     );
     final updatedMembers = [...state.currentTeam!.members, newMember];
 
+<<<<<<< Updated upstream
+=======
+>>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
+>>>>>>> Stashed changes
     emit(state.copyWith(
       currentTeam: TeamModel(
         id: state.currentTeam!.id,
@@ -341,6 +386,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
 
   void _onMemberReady(ev.TeamMemberReadyEvent event, Emitter<TeamState> emit) {
     if (state.currentTeam == null) return;
+    if (event.teamId != state.currentTeam!.id) return;
     final updatedMembers = state.currentTeam!.members.map((m) {
       if (m.userId == event.userId) {
         return TeamMemberModel(
@@ -373,16 +419,35 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   }
 
   void _onTeamDisbanded(ev.TeamDisbandedEvent event, Emitter<TeamState> emit) {
+<<<<<<< Updated upstream
     final isMyTeam = state.currentTeam != null && state.currentTeam!.id == event.teamId;
     if (isMyTeam) {
+=======
+<<<<<<< HEAD
+    if (state.currentTeam == null || event.teamId != state.currentTeam!.id) return;
+    if (state.currentTeam != null) {
+=======
+    final isMyTeam = state.currentTeam != null && state.currentTeam!.id == event.teamId;
+    if (isMyTeam) {
+>>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
+>>>>>>> Stashed changes
       _wsClient.unsubscribeRoom(state.currentTeam!.id, 'team');
       emit(state.copyWith(clearTeam: true, successMessage: 'Nhóm đã bị giải tán'));
     } else {
       emit(state.copyWith());
     }
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+    AppEventBus.instance.triggerProfileReload();
+    emit(state.copyWith(clearTeam: true, successMessage: 'Nhóm đã bị giải tán'));
+=======
+>>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
+>>>>>>> Stashed changes
   }
 
   void _onJoinRequestCreated(ev.JoinRequestCreatedEvent event, Emitter<TeamState> emit) {
+    if (state.currentTeam == null || event.request.teamId != state.currentTeam!.id) return;
     final updated = [event.request, ...state.joinRequests];
     emit(state.copyWith(joinRequests: updated));
   }

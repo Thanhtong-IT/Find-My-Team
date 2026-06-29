@@ -80,26 +80,29 @@ class TeamJoinRequestSent extends TeamEvent {
 
 // Realtime events forwarded from WebSocket
 class TeamMemberJoinedEvent extends TeamEvent {
+  final String teamId;
   final String userId;
   final String displayName;
-  const TeamMemberJoinedEvent({required this.userId, required this.displayName});
+  const TeamMemberJoinedEvent({required this.teamId, required this.userId, required this.displayName});
   @override
-  List<Object?> get props => [userId, displayName];
+  List<Object?> get props => [teamId, userId, displayName];
 }
 
 class TeamMemberLeftEvent extends TeamEvent {
+  final String teamId;
   final String userId;
-  const TeamMemberLeftEvent(this.userId);
+  const TeamMemberLeftEvent({required this.teamId, required this.userId});
   @override
-  List<Object?> get props => [userId];
+  List<Object?> get props => [teamId, userId];
 }
 
 class TeamMemberReadyEvent extends TeamEvent {
+  final String teamId;
   final String userId;
   final bool isReady;
-  const TeamMemberReadyEvent({required this.userId, required this.isReady});
+  const TeamMemberReadyEvent({required this.teamId, required this.userId, required this.isReady});
   @override
-  List<Object?> get props => [userId, isReady];
+  List<Object?> get props => [teamId, userId, isReady];
 }
 
 class TeamDisbandedEvent extends TeamEvent {
@@ -115,6 +118,8 @@ class JoinRequestCreatedEvent extends TeamEvent {
   @override
   List<Object?> get props => [request];
 }
+<<<<<<< HEAD
+=======
 
 class TeamMemberKickedEvent extends TeamEvent {
   final String userId;
@@ -130,3 +135,7 @@ class TeamMemberKickRequested extends TeamEvent {
   List<Object?> get props => [memberId];
 }
 
+<<<<<<< Updated upstream
+=======
+>>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
+>>>>>>> Stashed changes
