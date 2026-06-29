@@ -118,8 +118,6 @@ class JoinRequestCreatedEvent extends TeamEvent {
   @override
   List<Object?> get props => [request];
 }
-<<<<<<< HEAD
-=======
 
 class TeamMemberKickedEvent extends TeamEvent {
   final String userId;
@@ -134,8 +132,3 @@ class TeamMemberKickRequested extends TeamEvent {
   @override
   List<Object?> get props => [memberId];
 }
-
-<<<<<<< Updated upstream
-=======
->>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
->>>>>>> Stashed changes

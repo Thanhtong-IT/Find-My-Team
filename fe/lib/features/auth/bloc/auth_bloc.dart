@@ -122,7 +122,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _connectWebSocket() async {
     final token = await _secureStorage.getAccessToken();
     if (token == null || token.isEmpty) return;
-    final wsUrl = dotenv.env['WS_URL'] ?? 'ws://localhost:8080/ws';
+    final wsUrl = dotenv.env['WS_URL'] ?? 'wss://findmyteam.q2k.click/ws';
     _wsClient.connect(
       url: wsUrl,
       token: token,

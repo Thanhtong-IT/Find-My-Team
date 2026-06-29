@@ -114,7 +114,8 @@ class _CommunityScreenBody extends StatelessWidget {
                         ),
                       );
                     },
-                  );
+                  ),
+                );
         },
       ),
     );

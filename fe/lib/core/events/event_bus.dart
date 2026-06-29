@@ -60,15 +60,8 @@ class AppEventBus {
       e.type == WsEventType.teamMemberLeft ||
       e.type == WsEventType.teamMemberReady ||
       e.type == WsEventType.teamDisbanded ||
-<<<<<<< Updated upstream
       e.type == WsEventType.teamMemberKicked ||
-=======
-<<<<<<< HEAD
       e.type == WsEventType.joinRequestCreated ||
-=======
-      e.type == WsEventType.teamMemberKicked ||
->>>>>>> 8894771e0d523fbeeecc735daf142d712effc3e8
->>>>>>> Stashed changes
       e.type == WsEventType.joinRequestAccepted);
 
   Stream<WsIncomingEvent> get joinRequestStream =>
