@@ -22,6 +22,8 @@ import '../../profile/bloc/profile_bloc.dart';
 import '../../profile/bloc/profile_event.dart';
 import '../../profile/screens/user_profile_screen.dart';
 import 'invite_member_screen.dart';
+import '../../../core/di/injection.dart';
+import '../../../core/voice/voice_chat_service.dart';
 
 class TeamScreen extends StatefulWidget {
   const TeamScreen({super.key});
@@ -87,6 +89,7 @@ class _TeamScreenState extends State<TeamScreen> {
   void dispose() {
     _navigateSub?.cancel();
     _wsSubscription?.cancel();
+    getIt<VoiceChatService>().leaveVoiceRoom();
     super.dispose();
   }
 
@@ -135,10 +138,36 @@ class _TeamScreenState extends State<TeamScreen> {
       listener: (context, state) {
         if (state.errorMessage != null) {
           _showSnackBar(state.errorMessage!, isError: true);
-          // Có thể reset error message trong bloc nếu cần, ở đây chỉ cần show snackbar là đủ
         }
         if (state.successMessage != null) {
           _showSnackBar(state.successMessage!);
+        }
+
+        // Sync voice room membership and mute state
+        final currentTeam = state.currentTeam;
+        final myUserId = context.read<ProfileBloc>().state.profile?.id ?? '';
+        final voiceService = getIt<VoiceChatService>();
+
+        if (currentTeam != null && myUserId.isNotEmpty) {
+          if (!voiceService.isInCall) {
+            voiceService.joinVoiceRoom(currentTeam.id, myUserId).then((success) {
+              if (success) {
+                final myMember = currentTeam.members.firstWhere(
+                  (m) => m.userId == myUserId,
+                  orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
+                );
+                voiceService.toggleMute(!myMember.isMicEnabled);
+              }
+            });
+          } else {
+            final myMember = currentTeam.members.firstWhere(
+              (m) => m.userId == myUserId,
+              orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
+            );
+            voiceService.toggleMute(!myMember.isMicEnabled);
+          }
+        } else if (currentTeam == null && voiceService.isInCall) {
+          voiceService.leaveVoiceRoom();
         }
       },
       builder: (context, state) {
@@ -595,6 +624,201 @@ class _JoinRequestCard extends StatelessWidget {
               const SizedBox(height: 6),
               SizedBox(
                 width: isSmallScreen ? 80 : 90,
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => onTabSelected(index),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: EdgeInsets.only(right: index < tabs.length - 1 ? 8 : 0),
+                padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary : AppColors.surface,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  tabs[index],
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 13 : 14,
+                    fontWeight: FontWeight.w600,
+                    color: isSelected ? AppColors.white : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+}
+
+class _RequestTab extends StatelessWidget {
+  final List<JoinRequestModel> requests;
+  final bool hasTeam;
+  final bool isSmallScreen;
+  final VoidCallback onRefresh;
+  final void Function(String) onAccept;
+  final void Function(String) onReject;
+  final void Function(String userId) onViewProfile;
+
+  const _RequestTab({
+    required this.requests,
+    required this.hasTeam,
+    required this.isSmallScreen,
+    required this.onRefresh,
+    required this.onAccept,
+    required this.onReject,
+    required this.onViewProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasTeam) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: RefreshIndicator(
+          onRefresh: () async => onRefresh(),
+          color: AppColors.primary,
+          child: SingleChildScrollView(
+            physics: const NeverScrollableScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                const SizedBox(height: 40),
+                Icon(Icons.inbox_rounded, size: isSmallScreen ? 60 : 72, color: AppColors.textLight),
+                const SizedBox(height: 16),
+                Text('Bạn chưa có nhóm', style: TextStyle(fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                Text('Hãy tạo nhóm trước để nhận yêu cầu tham gia.', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: AppColors.textSecondary), textAlign: TextAlign.center),
+                const SizedBox(height: 40),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async => onRefresh(),
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 8),
+            Text('Yêu cầu tham gia (${requests.length})', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            const SizedBox(height: 12),
+            if (requests.isEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 32),
+                alignment: Alignment.center,
+                child: Column(
+                  children: [
+                    Icon(Icons.check_circle_outline_rounded, size: isSmallScreen ? 48 : 56, color: AppColors.success),
+                    const SizedBox(height: 12),
+                    Text('Không có yêu cầu nào', style: TextStyle(fontSize: isSmallScreen ? 14 : 15, color: AppColors.textSecondary)),
+                  ],
+                ),
+              )
+            else
+              ...requests.map((request) => Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _JoinRequestCard(
+                      request: request,
+                      isSmallScreen: isSmallScreen,
+                      onAccept: () => onAccept(request.id),
+                      onReject: () => onReject(request.id),
+                      onViewProfile: () => onViewProfile(request.userId),
+                    ),
+                  )),
+            const SizedBox(height: 120),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _JoinRequestCard extends StatelessWidget {
+  final JoinRequestModel request;
+  final bool isSmallScreen;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final VoidCallback onViewProfile;
+
+  const _JoinRequestCard({
+    required this.request,
+    required this.isSmallScreen,
+    required this.onAccept,
+    required this.onReject,
+    required this.onViewProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: onViewProfile,
+            child: CircleAvatar(
+              radius: isSmallScreen ? 22 : 26,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+              backgroundImage: request.userAvatarUrl != null ? NetworkImage(request.userAvatarUrl!) : null,
+              child: request.userAvatarUrl == null
+                  ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: GestureDetector(
+              onTap: onViewProfile,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(request.userDisplayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                  const SizedBox(height: 4),
+                  if (request.message != null && request.message!.isNotEmpty)
+                    Text(
+                      'Lời nhắn: "${request.message}"',
+                      style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+                    )
+                  else
+                    Text(
+                      'Không có lời nhắn',
+                      style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textLight),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            children: [
+              SizedBox(
+                width: isSmallScreen ? 80 : 90,
+                height: isSmallScreen ? 32 : 36,
+                child: ElevatedButton(
+                  onPressed: onAccept,
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, foregroundColor: AppColors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: EdgeInsets.zero),
+                  child: Text('Chấp nhận', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: isSmallScreen ? 80 : 90,
                 height: isSmallScreen ? 32 : 36,
                 child: OutlinedButton(
                   onPressed: onReject,
@@ -662,131 +886,146 @@ class _TeamTab extends StatelessWidget {
     final isMyReady = myMember.isReady;
     final isMyMicEnabled = myMember.isMicEnabled;
 
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          _WaitingRoomHeader(
-            members: members,
-            teamSize: teamSize,
-            createdGame: currentTeam.gameName,
-            createdRank: currentTeam.requiredRank,
-            isSmallScreen: isSmallScreen,
-          ),
-          const SizedBox(height: 16),
-          Text('Danh sách thành viên', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-          const SizedBox(height: 12),
-          ...members.map((member) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _MemberRow(
-                member: member,
-                isLeader: member.isLeader || member.userId == currentTeam.ownerId,
-                isSmallScreen: isSmallScreen,
-                myUserId: myUserId,
-                myUserName: myUserName,
-                isTeamLeader: isLeader,
-                onTap: () => onViewProfile(member.userId),
-                onKick: member.userId != myUserId ? () => onKickMember(member.userId) : null,
-              ),
-            );
-          }),
-          ...List.generate(emptySlots, (index) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _EmptySlotRow(isSmallScreen: isSmallScreen),
-              )),
-          const SizedBox(height: 20),
-          if (!isLeader) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: SizedBox(
-                    height: isSmallScreen ? 44 : 48,
-                    child: ElevatedButton(
-                      onPressed: () => onReadyToggled(!isMyReady),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isMyReady ? AppColors.success : AppColors.primary.withValues(alpha: 0.8),
-                        foregroundColor: AppColors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(isMyReady ? Icons.check_rounded : Icons.radio_button_unchecked_rounded, size: 18),
-                          const SizedBox(width: 6),
-                          Text(isMyReady ? 'Đã sẵn sàng (Click để hủy)' : 'Sẵn sàng', style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmallScreen ? 13 : 14)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-          ],
-          SizedBox(
-            width: double.infinity,
-            height: isSmallScreen ? 44 : 48,
-            child: ElevatedButton.icon(
-              onPressed: onMicToggled,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isMyMicEnabled ? AppColors.success : AppColors.textSecondary,
-                foregroundColor: AppColors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              icon: Icon(isMyMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded, size: 18),
-              label: Text(
-                isMyMicEnabled ? 'Mic đang bật (Nhấn để tắt)' : 'Mic đang tắt (Nhấn để bật)',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmallScreen ? 12 : 14),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
+    return StreamBuilder<Set<String>>(
+      stream: getIt<VoiceChatService>().activeSpeakersStream,
+      initialData: const {},
+      builder: (context, activeSpeakersSnapshot) {
+        final activeSpeakers = activeSpeakersSnapshot.data ?? const {};
+
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (!isLeader)
-                Expanded(
-                  child: SizedBox(
-                    height: isSmallScreen ? 40 : 44,
-                    child: OutlinedButton(
-                      onPressed: onLeaveTeam,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.textSecondary,
-                        side: const BorderSide(color: AppColors.divider),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 8),
+              _WaitingRoomHeader(
+                members: members,
+                teamSize: teamSize,
+                createdGame: currentTeam.gameName,
+                createdRank: currentTeam.requiredRank,
+                isSmallScreen: isSmallScreen,
+              ),
+              const SizedBox(height: 16),
+              Text('Danh sách thành viên', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+              const SizedBox(height: 12),
+              ...members.map((member) {
+                final isActiveSpeaker = member.userId == myUserId
+                    ? (getIt<VoiceChatService>().isInCall && member.isMicEnabled)
+                    : (activeSpeakers.contains(member.userId) && member.isMicEnabled);
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _MemberRow(
+                    member: member,
+                    isLeader: member.isLeader || member.userId == currentTeam.ownerId,
+                    isSmallScreen: isSmallScreen,
+                    myUserId: myUserId,
+                    myUserName: myUserName,
+                    isTeamLeader: isLeader,
+                    onTap: () => onViewProfile(member.userId),
+                    onKick: member.userId != myUserId ? () => onKickMember(member.userId) : null,
+                    isActiveSpeaker: isActiveSpeaker,
+                  ),
+                );
+              }),
+              ...List.generate(emptySlots, (index) => Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _EmptySlotRow(isSmallScreen: isSmallScreen),
+                  )),
+              const SizedBox(height: 20),
+              if (!isLeader) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: SizedBox(
+                        height: isSmallScreen ? 44 : 48,
+                        child: ElevatedButton(
+                          onPressed: () => onReadyToggled(!isMyReady),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isMyReady ? AppColors.success : AppColors.primary.withValues(alpha: 0.8),
+                            foregroundColor: AppColors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(isMyReady ? Icons.check_rounded : Icons.radio_button_unchecked_rounded, size: 18),
+                              const SizedBox(width: 6),
+                              Text(isMyReady ? 'Đã sẵn sàng (Click để hủy)' : 'Sẵn sàng', style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmallScreen ? 13 : 14)),
+                            ],
+                          ),
+                        ),
                       ),
-                      child: Text('Rời nhóm', style: TextStyle(fontWeight: FontWeight.w600, fontSize: isSmallScreen ? 12 : 13)),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              SizedBox(
+                width: double.infinity,
+                height: isSmallScreen ? 44 : 48,
+                child: ElevatedButton.icon(
+                  onPressed: onMicToggled,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isMyMicEnabled ? AppColors.success : AppColors.textSecondary,
+                    foregroundColor: AppColors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  icon: Icon(isMyMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded, size: 18),
+                  label: Text(
+                    isMyMicEnabled ? 'Mic đang bật (Nhấn để tắt)' : 'Mic đang tắt (Nhấn để bật)',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: isSmallScreen ? 12 : 14),
                   ),
                 ),
-              if (isLeader)
-                Expanded(
-                  child: SizedBox(
-                    height: isSmallScreen ? 40 : 44,
-                    child: OutlinedButton(
-                      onPressed: onDisbandTeam,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.error,
-                        side: const BorderSide(color: AppColors.error),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  if (!isLeader)
+                    Expanded(
+                      child: SizedBox(
+                        height: isSmallScreen ? 40 : 44,
+                        child: OutlinedButton(
+                          onPressed: onLeaveTeam,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.textSecondary,
+                            side: const BorderSide(color: AppColors.divider),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text('Rời nhóm', style: TextStyle(fontWeight: FontWeight.w600, fontSize: isSmallScreen ? 12 : 13)),
+                        ),
                       ),
-                      child: Text('Giải tán nhóm', style: TextStyle(fontWeight: FontWeight.w600, fontSize: isSmallScreen ? 12 : 13)),
                     ),
-                  ),
-                ),
+                  if (isLeader)
+                    Expanded(
+                      child: SizedBox(
+                        height: isSmallScreen ? 40 : 44,
+                        child: OutlinedButton(
+                          onPressed: onDisbandTeam,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.error,
+                            side: const BorderSide(color: AppColors.error),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Text('Giải tán nhóm', style: TextStyle(fontWeight: FontWeight.w600, fontSize: isSmallScreen ? 12 : 13)),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 120),
             ],
           ),
-          const SizedBox(height: 120),
-        ],
-      ),
+        );
+      },
     );
   }
 }
+
+
 
 class _WaitingRoomHeader extends StatelessWidget {
   final List<TeamMemberModel> members;
@@ -903,8 +1142,10 @@ class _MemberRow extends StatelessWidget {
   final String myUserId;
   final String myUserName;
   final bool isTeamLeader;
+
   final VoidCallback onTap;
   final VoidCallback? onKick;
+  final bool isActiveSpeaker;
 
   const _MemberRow({
     required this.member,
@@ -915,6 +1156,7 @@ class _MemberRow extends StatelessWidget {
     required this.isTeamLeader,
     required this.onTap,
     this.onKick,
+    required this.isActiveSpeaker,
   });
 
   @override
@@ -928,19 +1170,40 @@ class _MemberRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.white,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.divider),
+          border: Border.all(
+            color: isActiveSpeaker ? AppColors.success : AppColors.divider,
+            width: isActiveSpeaker ? 2.0 : 1.0,
+          ),
+          boxShadow: isActiveSpeaker
+              ? [
+                  BoxShadow(
+                    color: AppColors.success.withValues(alpha: 0.15),
+                    blurRadius: 8,
+                    spreadRadius: 1,
+                  )
+                ]
+              : null,
         ),
         child: Row(
           children: [
             Stack(
               children: [
-                CircleAvatar(
-                  radius: avatarSize / 2,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                  backgroundImage: member.avatarUrl != null ? NetworkImage(member.avatarUrl!) : null,
-                  child: member.avatarUrl == null
-                      ? Icon(Icons.person, color: AppColors.primary, size: avatarSize / 2)
-                      : null,
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isActiveSpeaker ? AppColors.success : Colors.transparent,
+                      width: 2.0,
+                    ),
+                  ),
+                  child: CircleAvatar(
+                    radius: avatarSize / 2,
+                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                    backgroundImage: member.avatarUrl != null ? NetworkImage(member.avatarUrl!) : null,
+                    child: member.avatarUrl == null
+                        ? Icon(Icons.person, color: AppColors.primary, size: avatarSize / 2)
+                        : null,
+                  ),
                 ),
                 if (member.isOnline)
                   Positioned(
@@ -993,39 +1256,20 @@ class _MemberRow extends StatelessWidget {
                   Row(
                     children: [
                       Icon(
-                        member.isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
+                        isActiveSpeaker
+                            ? Icons.volume_up_rounded
+                            : (member.isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded),
                         size: isSmallScreen ? 12 : 14,
                         color: member.isMicEnabled ? AppColors.success : AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        member.isMicEnabled ? 'Mic đang bật' : 'Mic đang tắt',
+                        isActiveSpeaker
+                            ? 'Đang nói...'
+                            : (member.isMicEnabled ? 'Mic đang bật' : 'Mic đang tắt'),
                         style: TextStyle(
                           fontSize: isSmallScreen ? 10 : 11,
                           color: member.isMicEnabled ? AppColors.success : AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            if (isTeamLeader && onKick != null)
-              GestureDetector(
-                onTap: onKick,
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.error.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    Icons.remove_circle_outline_rounded,
-                    color: AppColors.error,
-                    size: isSmallScreen ? 18 : 20,
-                  ),
-                ),
-              ),
           ],
         ),
       ),

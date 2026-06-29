@@ -5,6 +5,7 @@ import '../network/dio_client.dart';
 import '../repository/secure_storage_repository.dart';
 import '../websocket/websocket_client.dart';
 import '../events/event_bus.dart';
+import '../voice/voice_chat_service.dart';
 
 final getIt = GetIt.instance;
 
@@ -32,4 +33,11 @@ Future<void> setupDependencies() async {
 
   // Event Bus
   getIt.registerLazySingleton<AppEventBus>(() => AppEventBus.instance);
+
+  // Voice Chat
+  getIt.registerLazySingleton<VoiceChatService>(() {
+    final service = VoiceChatService.instance;
+    service.init(getIt<WebSocketClient>());
+    return service;
+  });
 }
