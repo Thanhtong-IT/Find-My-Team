@@ -54,11 +54,12 @@ class _TeamScreenState extends State<TeamScreen> {
   }
 
   void _setupGlobalWebSocketListener() {
+    final profileBloc = context.read<ProfileBloc>();
     _wsSubscription = WebSocketClient.instance.eventStream.listen((event) {
       if (event.type == WsEventType.teamMessageCreated) {
         if (!_isChatOpen) {
           final senderId = event.data['senderId']?.toString();
-          final myUserId = context.read<ProfileBloc>().state.profile?.id ?? '';
+          final myUserId = profileBloc.state.profile?.id ?? '';
           if (senderId != myUserId) {
             setState(() => _hasUnreadMessage = true);
           }

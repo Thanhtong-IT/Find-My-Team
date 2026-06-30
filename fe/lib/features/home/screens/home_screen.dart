@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/events/event_bus.dart';

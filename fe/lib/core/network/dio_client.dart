@@ -7,9 +7,7 @@ import 'auth_interceptor.dart';
 class DioClient {
   DioClient._();
 
-  static final FlutterSecureStorage _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
   static late final TokenRepository tokenRepository;
   static late final Dio instance;

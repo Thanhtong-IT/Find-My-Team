@@ -1,6 +1,6 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/api_constants.dart';
 import 'dio_client.dart';
@@ -120,36 +120,36 @@ class AuthInterceptor extends Interceptor {
     final token = await tokenRepo.getAccessToken();
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
-      print('[AUTH] Added token to ${options.path}');
+      debugPrint('[AUTH] Added token to ${options.path}');
     } else {
-      print('[AUTH] No token available for ${options.path}');
+      debugPrint('[AUTH] No token available for ${options.path}');
     }
     handler.next(options);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
-    print('[AUTH] onError: ${err.requestOptions.path} status=${err.response?.statusCode}');
+    debugPrint('[AUTH] onError: ${err.requestOptions.path} status=${err.response?.statusCode}');
 
     // Log response body for debugging
     if (err.response != null) {
-      print('[AUTH] Response body: ${err.response?.data}');
+      debugPrint('[AUTH] Response body: ${err.response?.data}');
     }
 
     // Chỉ retry khi gặp 401 và không phải request refresh ban đầu
     if (err.response?.statusCode == 401 &&
         !err.requestOptions.path.contains('/auth/refresh')) {
-      print('[AUTH] Got 401, attempting refresh...');
+      debugPrint('[AUTH] Got 401, attempting refresh...');
       try {
         final retryResp = await _refreshAndRetry(
           Dio(),
           err,
           tokenRepo,
         );
-        print('[AUTH] Refresh SUCCESS, retrying ${err.requestOptions.path}');
+        debugPrint('[AUTH] Refresh SUCCESS, retrying ${err.requestOptions.path}');
         return handler.resolve(retryResp);
       } on DioException catch (e) {
-        print('[AUTH] Refresh FAILED: ${e.message}');
+        debugPrint('[AUTH] Refresh FAILED: ${e.message}');
         return handler.next(e);
       }
     }

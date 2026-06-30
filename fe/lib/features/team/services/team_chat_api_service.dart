@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../community/models/chat_message.dart';

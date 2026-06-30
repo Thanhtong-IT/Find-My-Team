@@ -11,9 +11,7 @@ final getIt = GetIt.instance;
 
 Future<void> setupDependencies() async {
   getIt.registerLazySingleton<FlutterSecureStorage>(
-    () => const FlutterSecureStorage(
-      aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    ),
+    () => const FlutterSecureStorage(),
   );
 
   // Core

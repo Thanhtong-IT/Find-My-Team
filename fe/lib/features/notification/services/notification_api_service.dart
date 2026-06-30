@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import '../../../core/network/dio_client.dart';
 import '../../../core/constants/api_constants.dart';
 import '../bloc/notification_event.dart';
@@ -73,12 +74,12 @@ class NotificationApiService {
 
   NotificationItemModel _fromJson(Map<String, dynamic> json) {
     // DEBUG LOG
-    print('[NOTIFICATION_DEBUG] Parsing notification: $json');
+    debugPrint('[NOTIFICATION_DEBUG] Parsing notification: $json');
 
     // Check for null id
     final idRaw = json['id'];
     if (idRaw == null) {
-      print('[NOTIFICATION_DEBUG] ERROR: id is null in notification json');
+      debugPrint('[NOTIFICATION_DEBUG] ERROR: id is null in notification json');
       throw Exception('Notification id is null');
     }
 
@@ -88,9 +89,9 @@ class NotificationApiService {
       timestamp = DateTime.parse(json['timestamp'] as String);
     } else if (json['createdAt'] != null) {
       timestamp = DateTime.parse(json['createdAt'] as String);
-      print('[NOTIFICATION_DEBUG] NOTE: using createdAt instead of timestamp');
+      debugPrint('[NOTIFICATION_DEBUG] NOTE: using createdAt instead of timestamp');
     } else {
-      print('[NOTIFICATION_DEBUG] NOTE: no timestamp field found, using now');
+      debugPrint('[NOTIFICATION_DEBUG] NOTE: no timestamp field found, using now');
       timestamp = DateTime.now();
     }
 

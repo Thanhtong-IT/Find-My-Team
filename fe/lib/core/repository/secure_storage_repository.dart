@@ -8,9 +8,7 @@ class SecureStorageRepository {
   static final SecureStorageRepository _instance = SecureStorageRepository._internal();
   factory SecureStorageRepository() => _instance;
 
-  static const FlutterSecureStorage _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
 
   static const String _keyAccessToken = 'access_token';
   static const String _keyRefreshToken = 'refresh_token';

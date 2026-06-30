@@ -20,7 +20,6 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   final _storage = SecureStorageRepository();
   final _searchController = TextEditingController();
 
-  List<UserSearchResult> _searchResults = [];
   List<UserSearchResult> _filteredResults = [];
   bool _isSearching = false;
   bool _isSending = false;
@@ -41,7 +40,6 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   Future<void> _searchUsers(String query) async {
     if (query.trim().isEmpty) {
       setState(() {
-        _searchResults = [];
         _filteredResults = [];
       });
       return;
@@ -54,7 +52,6 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
       // Filter out current user
       final filtered = results.where((u) => u.id != _currentUserId).toList();
       setState(() {
-        _searchResults = filtered;
         _filteredResults = filtered;
         _isSearching = false;
       });

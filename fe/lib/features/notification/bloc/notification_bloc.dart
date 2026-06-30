@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/events/event_bus.dart';
 import '../../../core/websocket/websocket_client.dart';
@@ -25,7 +26,7 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
 
   void _listenWebSocket() {
     _wsSub = AppEventBus.instance.notificationStream.listen((event) {
-      print('[WS_DEBUG] Received event: type=${event.type}, data=${event.data}');
+      debugPrint('[WS_DEBUG] Received event: type=${event.type}, data=${event.data}');
 
       NotificationItemModel notif;
       if (event.type == WsEventType.joinRequestAccepted) {
@@ -74,22 +75,22 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     NotificationLoadRequested event,
     Emitter<NotificationState> emit,
   ) async {
-    print('[BLOC_DEBUG] _onLoadRequested called');
+    debugPrint('[BLOC_DEBUG] _onLoadRequested called');
     emit(state.copyWith(status: NotificationStatus.loading));
     try {
-      print('[BLOC_DEBUG] Calling API...');
+      debugPrint('[BLOC_DEBUG] Calling API...');
       final notifs = await _apiService.getNotifications();
-      print('[BLOC_DEBUG] Got ${notifs.length} notifications');
+      debugPrint('[BLOC_DEBUG] Got ${notifs.length} notifications');
       final unread = notifs.where((n) => !n.isRead).length;
       emit(state.copyWith(
         status: NotificationStatus.loaded,
         notifications: notifs,
         unreadCount: unread,
       ));
-      print('[BLOC_DEBUG] State updated successfully');
+      debugPrint('[BLOC_DEBUG] State updated successfully');
     } catch (e, stack) {
-      print('[BLOC_DEBUG] ERROR loading notifications: $e');
-      print('[BLOC_DEBUG] Stack trace: $stack');
+      debugPrint('[BLOC_DEBUG] ERROR loading notifications: $e');
+      debugPrint('[BLOC_DEBUG] Stack trace: $stack');
       emit(state.copyWith(status: NotificationStatus.error, errorMessage: 'Không thể tải thông báo: $e'));
     }
   }
