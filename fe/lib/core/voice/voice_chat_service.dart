@@ -46,6 +46,8 @@ class VoiceChatService {
   final Map<String, DateTime> _lastSpeechDetectedAt = {};
   final Map<String, double> _lastAudioEnergy = {};
   final Map<String, double> _lastSamplesDuration = {};
+  final Map<String, DateTime> _recentVoiceSignals = {};
+  bool _didLogIceConfiguration = false;
 
   final Map<String, List<RTCIceCandidate>> _pendingIceCandidates = {};
   Timer? _voiceActivityTimer;
@@ -81,6 +83,15 @@ class VoiceChatService {
         'username': turnUsername,
         'credential': turnCredential,
       });
+    }
+
+    if (!_didLogIceConfiguration) {
+      _didLogIceConfiguration = true;
+      debugPrint(
+        turnHost.isNotEmpty && turnUsername.isNotEmpty && turnCredential.isNotEmpty
+            ? '[VoiceChat] TURN enabled: $turnHost (TLS: $turnTlsEnabled)'
+            : '[VoiceChat] TURN disabled: set TURN_HOST, TURN_USERNAME and TURN_CREDENTIAL',
+      );
     }
 
     return {'iceServers': iceServers};
@@ -233,6 +244,7 @@ class VoiceChatService {
 
     final senderId = data['userId']?.toString() ?? data['senderId']?.toString();
     if (senderId == null || senderId == _myUserId) return;
+    if (_isDuplicateVoiceSignal(event, senderId)) return;
 
     debugPrint('[VoiceChat] Received voice signal: op=${event.type}, sender=$senderId');
 
@@ -279,6 +291,31 @@ class VoiceChatService {
       default:
         break;
     }
+  }
+
+  bool _isDuplicateVoiceSignal(WsIncomingEvent event, String senderId) {
+    final data = event.data;
+    final identity = switch (event.type) {
+      WsEventType.voiceOffer || WsEventType.voiceAnswer => data['sdp'],
+      WsEventType.voiceIceCandidate => data['candidate']?['candidate'],
+      _ => event.type.name,
+    };
+    final key = '${event.type.name}|$senderId|$identity';
+    final now = DateTime.now();
+    final previous = _recentVoiceSignals[key];
+
+    _recentVoiceSignals.removeWhere(
+      (_, receivedAt) => now.difference(receivedAt) > const Duration(seconds: 30),
+    );
+    _recentVoiceSignals[key] = now;
+
+    if (previous != null && now.difference(previous) < const Duration(seconds: 30)) {
+      debugPrint(
+        '[VoiceChat] Ignored duplicate ${event.type.name} from peer: $senderId',
+      );
+      return true;
+    }
+    return false;
   }
 
   Future<void> _initiateCall(String peerId) async {
@@ -350,6 +387,13 @@ class VoiceChatService {
     if (pc == null) return;
 
     try {
+      final signalingState = await pc.getSignalingState();
+      if (signalingState != RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
+        debugPrint(
+          '[VoiceChat] Ignored answer from $peerId in signaling state: $signalingState',
+        );
+        return;
+      }
       final description = RTCSessionDescription(sdp, 'answer');
       await pc.setRemoteDescription(description);
       _remoteDescriptionPeers.add(peerId);

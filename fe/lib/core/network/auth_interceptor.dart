@@ -131,11 +131,6 @@ class AuthInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     debugPrint('[AUTH] onError: ${err.requestOptions.path} status=${err.response?.statusCode}');
 
-    // Log response body for debugging
-    if (err.response != null) {
-      debugPrint('[AUTH] Response body: ${err.response?.data}');
-    }
-
     // Chỉ retry khi gặp 401 và không phải request refresh ban đầu
     if (err.response?.statusCode == 401 &&
         !err.requestOptions.path.contains('/auth/refresh')) {
