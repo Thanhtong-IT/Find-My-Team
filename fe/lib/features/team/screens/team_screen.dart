@@ -39,7 +39,6 @@ class _TeamScreenState extends State<TeamScreen> {
   List<CommunityModel> _communities = [];
   bool _isChatOpen = false;
   bool _hasUnreadMessage = false;
-  String? _currentTeamId;
 
   @override
   void initState() {
@@ -138,6 +137,7 @@ class _TeamScreenState extends State<TeamScreen> {
       listener: (context, state) {
         if (state.errorMessage != null) {
           _showSnackBar(state.errorMessage!, isError: true);
+          // Có thể reset error message trong bloc nếu cần, ở đây chỉ cần show snackbar là đủ
         }
         if (state.successMessage != null) {
           _showSnackBar(state.successMessage!);
@@ -149,21 +149,18 @@ class _TeamScreenState extends State<TeamScreen> {
         final voiceService = getIt<VoiceChatService>();
 
         if (currentTeam != null && myUserId.isNotEmpty) {
-          if (!voiceService.isInCall) {
+          final myMember = currentTeam.members.firstWhere(
+            (m) => m.userId == myUserId,
+            orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
+          );
+
+          if (!voiceService.isInCall && !voiceService.isJoining) {
             voiceService.joinVoiceRoom(currentTeam.id, myUserId).then((success) {
               if (success) {
-                final myMember = currentTeam.members.firstWhere(
-                  (m) => m.userId == myUserId,
-                  orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
-                );
                 voiceService.toggleMute(!myMember.isMicEnabled);
               }
             });
           } else {
-            final myMember = currentTeam.members.firstWhere(
-              (m) => m.userId == myUserId,
-              orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
-            );
             voiceService.toggleMute(!myMember.isMicEnabled);
           }
         } else if (currentTeam == null && voiceService.isInCall) {
@@ -175,9 +172,6 @@ class _TeamScreenState extends State<TeamScreen> {
         final myUserId = context.read<ProfileBloc>().state.profile?.id ?? '';
         final myUserName = context.read<ProfileBloc>().state.profile?.displayName ?? '';
         final isLeader = state.currentTeam?.ownerId == myUserId;
-
-        // Cập nhật team ID hiện tại
-        if (hasTeam) _currentTeamId = state.currentTeam!.id;
 
         return Scaffold(
           backgroundColor: AppColors.white,
@@ -624,201 +618,6 @@ class _JoinRequestCard extends StatelessWidget {
               const SizedBox(height: 6),
               SizedBox(
                 width: isSmallScreen ? 80 : 90,
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => onTabSelected(index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: EdgeInsets.only(right: index < tabs.length - 1 ? 8 : 0),
-                padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  tabs[index],
-                  style: TextStyle(
-                    fontSize: isSmallScreen ? 13 : 14,
-                    fontWeight: FontWeight.w600,
-                    color: isSelected ? AppColors.white : AppColors.textSecondary,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
-}
-
-class _RequestTab extends StatelessWidget {
-  final List<JoinRequestModel> requests;
-  final bool hasTeam;
-  final bool isSmallScreen;
-  final VoidCallback onRefresh;
-  final void Function(String) onAccept;
-  final void Function(String) onReject;
-  final void Function(String userId) onViewProfile;
-
-  const _RequestTab({
-    required this.requests,
-    required this.hasTeam,
-    required this.isSmallScreen,
-    required this.onRefresh,
-    required this.onAccept,
-    required this.onReject,
-    required this.onViewProfile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (!hasTeam) {
-      return SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: RefreshIndicator(
-          onRefresh: () async => onRefresh(),
-          color: AppColors.primary,
-          child: SingleChildScrollView(
-            physics: const NeverScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                Icon(Icons.inbox_rounded, size: isSmallScreen ? 60 : 72, color: AppColors.textLight),
-                const SizedBox(height: 16),
-                Text('Bạn chưa có nhóm', style: TextStyle(fontSize: isSmallScreen ? 16 : 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                const SizedBox(height: 8),
-                Text('Hãy tạo nhóm trước để nhận yêu cầu tham gia.', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: AppColors.textSecondary), textAlign: TextAlign.center),
-                const SizedBox(height: 40),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () async => onRefresh(),
-      color: AppColors.primary,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 8),
-            Text('Yêu cầu tham gia (${requests.length})', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-            const SizedBox(height: 12),
-            if (requests.isEmpty)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 32),
-                alignment: Alignment.center,
-                child: Column(
-                  children: [
-                    Icon(Icons.check_circle_outline_rounded, size: isSmallScreen ? 48 : 56, color: AppColors.success),
-                    const SizedBox(height: 12),
-                    Text('Không có yêu cầu nào', style: TextStyle(fontSize: isSmallScreen ? 14 : 15, color: AppColors.textSecondary)),
-                  ],
-                ),
-              )
-            else
-              ...requests.map((request) => Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _JoinRequestCard(
-                      request: request,
-                      isSmallScreen: isSmallScreen,
-                      onAccept: () => onAccept(request.id),
-                      onReject: () => onReject(request.id),
-                      onViewProfile: () => onViewProfile(request.userId),
-                    ),
-                  )),
-            const SizedBox(height: 120),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _JoinRequestCard extends StatelessWidget {
-  final JoinRequestModel request;
-  final bool isSmallScreen;
-  final VoidCallback onAccept;
-  final VoidCallback onReject;
-  final VoidCallback onViewProfile;
-
-  const _JoinRequestCard({
-    required this.request,
-    required this.isSmallScreen,
-    required this.onAccept,
-    required this.onReject,
-    required this.onViewProfile,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-        boxShadow: [BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          GestureDetector(
-            onTap: onViewProfile,
-            child: CircleAvatar(
-              radius: isSmallScreen ? 22 : 26,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-              backgroundImage: request.userAvatarUrl != null ? NetworkImage(request.userAvatarUrl!) : null,
-              child: request.userAvatarUrl == null
-                  ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
-                  : null,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GestureDetector(
-              onTap: onViewProfile,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(request.userDisplayName, style: TextStyle(fontSize: isSmallScreen ? 14 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                  const SizedBox(height: 4),
-                  if (request.message != null && request.message!.isNotEmpty)
-                    Text(
-                      'Lời nhắn: "${request.message}"',
-                      style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary, fontStyle: FontStyle.italic),
-                    )
-                  else
-                    Text(
-                      'Không có lời nhắn',
-                      style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textLight),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Column(
-            children: [
-              SizedBox(
-                width: isSmallScreen ? 80 : 90,
-                height: isSmallScreen ? 32 : 36,
-                child: ElevatedButton(
-                  onPressed: onAccept,
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.success, foregroundColor: AppColors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), padding: EdgeInsets.zero),
-                  child: Text('Chấp nhận', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
-                ),
-              ),
-              const SizedBox(height: 6),
-              SizedBox(
-                width: isSmallScreen ? 80 : 90,
                 height: isSmallScreen ? 32 : 36,
                 child: OutlinedButton(
                   onPressed: onReject,
@@ -910,9 +709,7 @@ class _TeamTab extends StatelessWidget {
               Text('Danh sách thành viên', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
               const SizedBox(height: 12),
               ...members.map((member) {
-                final isActiveSpeaker = member.userId == myUserId
-                    ? (getIt<VoiceChatService>().isInCall && member.isMicEnabled)
-                    : (activeSpeakers.contains(member.userId) && member.isMicEnabled);
+                final isActiveSpeaker = activeSpeakers.contains(member.userId);
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
@@ -1024,8 +821,6 @@ class _TeamTab extends StatelessWidget {
     );
   }
 }
-
-
 
 class _WaitingRoomHeader extends StatelessWidget {
   final List<TeamMemberModel> members;
@@ -1142,7 +937,6 @@ class _MemberRow extends StatelessWidget {
   final String myUserId;
   final String myUserName;
   final bool isTeamLeader;
-
   final VoidCallback onTap;
   final VoidCallback? onKick;
   final bool isActiveSpeaker;
@@ -1172,38 +966,20 @@ class _MemberRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: isActiveSpeaker ? AppColors.success : AppColors.divider,
-            width: isActiveSpeaker ? 2.0 : 1.0,
+            width: isActiveSpeaker ? 1.5 : 1,
           ),
-          boxShadow: isActiveSpeaker
-              ? [
-                  BoxShadow(
-                    color: AppColors.success.withValues(alpha: 0.15),
-                    blurRadius: 8,
-                    spreadRadius: 1,
-                  )
-                ]
-              : null,
         ),
         child: Row(
           children: [
             Stack(
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isActiveSpeaker ? AppColors.success : Colors.transparent,
-                      width: 2.0,
-                    ),
-                  ),
-                  child: CircleAvatar(
-                    radius: avatarSize / 2,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    backgroundImage: member.avatarUrl != null ? NetworkImage(member.avatarUrl!) : null,
-                    child: member.avatarUrl == null
-                        ? Icon(Icons.person, color: AppColors.primary, size: avatarSize / 2)
-                        : null,
-                  ),
+                CircleAvatar(
+                  radius: avatarSize / 2,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                  backgroundImage: member.avatarUrl != null ? NetworkImage(member.avatarUrl!) : null,
+                  child: member.avatarUrl == null
+                      ? Icon(Icons.person, color: AppColors.primary, size: avatarSize / 2)
+                      : null,
                 ),
                 if (member.isOnline)
                   Positioned(
@@ -1256,20 +1032,43 @@ class _MemberRow extends StatelessWidget {
                   Row(
                     children: [
                       Icon(
-                        isActiveSpeaker
-                            ? Icons.volume_up_rounded
-                            : (member.isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded),
+                        member.isMicEnabled ? Icons.mic_rounded : Icons.mic_off_rounded,
                         size: isSmallScreen ? 12 : 14,
                         color: member.isMicEnabled ? AppColors.success : AppColors.textSecondary,
                       ),
                       const SizedBox(width: 4),
                       Text(
                         isActiveSpeaker
-                            ? 'Đang nói...'
+                            ? 'Đang nói'
                             : (member.isMicEnabled ? 'Mic đang bật' : 'Mic đang tắt'),
                         style: TextStyle(
                           fontSize: isSmallScreen ? 10 : 11,
-                          color: member.isMicEnabled ? AppColors.success : AppColors.textSecondary,
+                          color: isActiveSpeaker
+                              ? AppColors.success
+                              : (member.isMicEnabled ? AppColors.success : AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (isTeamLeader && onKick != null)
+              GestureDetector(
+                onTap: onKick,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.remove_circle_outline_rounded,
+                    color: AppColors.error,
+                    size: isSmallScreen ? 18 : 20,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -2223,12 +2022,6 @@ class _TeamChatFullScreenState extends State<_TeamChatFullScreen> {
         );
       }
     });
-  }
-
-  String _formatTime(DateTime time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
   }
 
   @override
