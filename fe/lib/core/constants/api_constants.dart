@@ -28,6 +28,7 @@ class ApiConstants {
   static const String openTeams = '/teams/open';
   static const String recruitingTeams = '/teams/recruiting';
   static const String myJoinRequests = '/teams/my/join-requests';
+  static const String teamVoiceTokenSuffix = '/voice-token';
 
   // Community endpoints
   static const String communities = '/communities';

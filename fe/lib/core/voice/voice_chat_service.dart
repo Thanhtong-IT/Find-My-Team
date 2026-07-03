@@ -1,34 +1,23 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
+
+import '../../features/team/services/team_api_service.dart';
 import '../websocket/websocket_client.dart';
-import '../events/event_bus.dart';
 
 class VoiceChatService {
   VoiceChatService._();
   static final VoiceChatService instance = VoiceChatService._();
 
-  WebSocketClient? _wsClient;
-  StreamSubscription? _wsSubscription;
+  static const int _volumeIndicationIntervalMs = 250;
+  static const int _speakerVolumeThreshold = 10;
+  static const int _maxAgoraUid = 0x7fffffff;
 
-  MediaStream? _localStream;
-  final Map<String, RTCPeerConnection> _peerConnections = {};
-  
-  String? _currentTeamId;
-  String? _myUserId;
-  bool _isMuted = true;
-  bool _isInCall = false;
-  bool _isJoining = false;
-  bool _isPollingVoiceActivity = false;
-
-  static const Duration _voiceActivityPollInterval = Duration(milliseconds: 250);
-  static const Duration _speakerHoldDuration = Duration(milliseconds: 500);
-  static const double _startSpeakingThreshold = 0.06;
-  static const double _continueSpeakingThreshold = 0.03;
-
-  // Controllers for streams
+  final TeamApiService _teamApiService = TeamApiService();
   final _isInCallController = StreamController<bool>.broadcast();
   final _isMutedController = StreamController<bool>.broadcast();
   final _activeSpeakersController = StreamController<Set<String>>.broadcast();
@@ -41,74 +30,49 @@ class VoiceChatService {
   bool get isMuted => _isMuted;
   bool get isJoining => _isJoining;
 
+  RtcEngine? _engine;
+  String? _currentAppId;
+  String? _currentTeamId;
+  String? _myUserId;
+  int? _localAgoraUid;
+  bool _isMuted = true;
+  bool _isInCall = false;
+  bool _isJoining = false;
+
   final Set<String> _activeSpeakers = {};
-  final Set<String> _remoteDescriptionPeers = {};
-  final Map<String, DateTime> _lastSpeechDetectedAt = {};
-  final Map<String, double> _lastAudioEnergy = {};
-  final Map<String, double> _lastSamplesDuration = {};
-  final Map<String, DateTime> _recentVoiceSignals = {};
-  bool _didLogIceConfiguration = false;
+  final Map<int, String> _agoraUidToUserId = {};
 
-  final Map<String, List<RTCIceCandidate>> _pendingIceCandidates = {};
-  Timer? _voiceActivityTimer;
+  static final List<int> _crcTable = List<int>.generate(256, (index) {
+    var c = index;
+    for (var i = 0; i < 8; i++) {
+      c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+    }
+    return c;
+  });
 
-  // TURN credentials are injected through Flutter's .env file. When they are
-  // absent, voice chat still works with STUN on networks that allow direct P2P.
-  Map<String, dynamic> get _rtcConfig {
-    final turnHost = dotenv.env['TURN_HOST']?.trim() ?? '';
-    final turnUsername = dotenv.env['TURN_USERNAME']?.trim() ?? '';
-    final turnCredential = dotenv.env['TURN_CREDENTIAL']?.trim() ?? '';
-    final turnTlsEnabled =
-        (dotenv.env['TURN_TLS_ENABLED'] ?? 'false').toLowerCase() == 'true';
+  void init(WebSocketClient _) {}
 
-    final iceServers = <Map<String, dynamic>>[
-      {
-        'urls': [
-          'stun:stun.l.google.com:19302',
-          'stun:stun1.l.google.com:19302',
-          'stun:stun2.l.google.com:19302',
-        ],
-      },
-    ];
+  void syncTeamMembers(List<String> userIds) {
+    final sortedUserIds = userIds.toSet().toList()..sort();
+    final nextMap = <int, String>{};
+    final usedUids = <int>{};
 
-    if (turnHost.isNotEmpty &&
-        turnUsername.isNotEmpty &&
-        turnCredential.isNotEmpty) {
-      iceServers.add({
-        'urls': [
-          'turn:$turnHost:3478?transport=udp',
-          'turn:$turnHost:3478?transport=tcp',
-          if (turnTlsEnabled) 'turns:$turnHost:5349?transport=tcp',
-        ],
-        'username': turnUsername,
-        'credential': turnCredential,
-      });
+    for (final userId in sortedUserIds) {
+      var candidate = _baseAgoraUid(userId);
+      while (candidate == 0 || usedUids.contains(candidate)) {
+        candidate = candidate >= _maxAgoraUid ? 1 : candidate + 1;
+      }
+      usedUids.add(candidate);
+      nextMap[candidate] = userId;
     }
 
-    if (!_didLogIceConfiguration) {
-      _didLogIceConfiguration = true;
-      debugPrint(
-        turnHost.isNotEmpty && turnUsername.isNotEmpty && turnCredential.isNotEmpty
-            ? '[VoiceChat] TURN enabled: $turnHost (TLS: $turnTlsEnabled)'
-            : '[VoiceChat] TURN disabled: set TURN_HOST, TURN_USERNAME and TURN_CREDENTIAL',
-      );
-    }
+    _agoraUidToUserId
+      ..clear()
+      ..addAll(nextMap);
 
-    return {'iceServers': iceServers};
-  }
-
-  final Map<String, dynamic> _sdpConstraints = {
-    'mandatory': {
-      'OfferToReceiveAudio': true,
-      'OfferToReceiveVideo': false,
-    },
-    'optional': [],
-  };
-
-  void init(WebSocketClient wsClient) {
-    _wsClient = wsClient;
-    _wsSubscription?.cancel();
-    _wsSubscription = AppEventBus.instance.voiceEventStream.listen(_handleVoiceSignal);
+    final validUserIds = nextMap.values.toSet();
+    final nextSpeakers = _activeSpeakers.where(validUserIds.contains).toSet();
+    _publishActiveSpeakers(nextSpeakers);
   }
 
   Future<bool> joinVoiceRoom(String teamId, String myUserId) async {
@@ -118,57 +82,59 @@ class VoiceChatService {
     if (_isJoining && _currentTeamId == teamId) {
       return false;
     }
-    if (_isInCall) {
+    if (_isInCall || _isJoining) {
       await leaveVoiceRoom();
     }
-
-    debugPrint('[VoiceChat] Joining voice room: teamId=$teamId, myUserId=$myUserId');
 
     _isJoining = true;
     _currentTeamId = teamId;
     _myUserId = myUserId;
 
-    // Request Microphone permission
     final permissionStatus = await Permission.microphone.request();
     if (!permissionStatus.isGranted) {
-      debugPrint('[VoiceChat] Microphone permission denied');
       _isJoining = false;
       _currentTeamId = null;
       _myUserId = null;
+      debugPrint('[VoiceChat] Microphone permission denied');
       return false;
     }
 
     try {
-      // Get local audio stream
-      final Map<String, dynamic> mediaConstraints = {
-        'audio': {
-          'echoCancellation': true,
-          'noiseSuppression': true,
-          'autoGainControl': true,
-        },
-        'video': false,
-      };
+      final voiceToken = await _teamApiService.getVoiceToken(teamId);
+      final responseAppId = (voiceToken['appId']?.toString() ?? '').trim();
+      final envAppId = (dotenv.env['AGORA_APP_ID'] ?? '').trim();
+      final appId = responseAppId.isNotEmpty ? responseAppId : envAppId;
+      final channelName = (voiceToken['channelName']?.toString() ?? '').trim();
+      final token = (voiceToken['token']?.toString() ?? '').trim();
+      final agoraUid = (voiceToken['agoraUid'] as num?)?.toInt();
 
-      _localStream = await navigator.mediaDevices.getUserMedia(mediaConstraints);
-      _localStream!.getAudioTracks().forEach((track) {
-        track.enabled = !_isMuted;
-      });
+      if (appId.isEmpty || channelName.isEmpty || token.isEmpty || agoraUid == null) {
+        throw StateError('Missing Agora voice token payload');
+      }
+
+      _localAgoraUid = agoraUid;
+      _syncMembersFromTokenResponse(voiceToken, myUserId);
+      await _ensureEngine(appId);
+
+      debugPrint('[VoiceChat] Joining Agora: appId=$appId channel=$channelName uid=$agoraUid tokenLength=${token.length}');
+      await _engine!.joinChannel(
+        token: token,
+        channelId: channelName,
+        uid: agoraUid,
+        options: ChannelMediaOptions(
+          channelProfile: ChannelProfileType.channelProfileCommunication,
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ),
+      );
 
       _isInCall = true;
       _isJoining = false;
       _isInCallController.add(true);
-      _startVoiceActivityPolling();
-
-      // Notify others via WebSocket that we have joined the voice room
-      _wsClient?.sendVoiceSignal('VOICE_JOIN', {
-        'teamId': teamId,
-        'userId': myUserId,
-      });
-
-      debugPrint('[VoiceChat] Local stream obtained and VOICE_JOIN sent');
+      unawaited(_applyLocalAudioState());
+      debugPrint('[VoiceChat] Joined Agora voice room: teamId=$teamId uid=$agoraUid');
       return true;
     } catch (e) {
-      debugPrint('[VoiceChat] Error joining voice room: $e');
+      debugPrint('[VoiceChat] Error joining Agora voice room: $e');
       _isJoining = false;
       await leaveVoiceRoom();
       return false;
@@ -176,484 +142,259 @@ class VoiceChatService {
   }
 
   Future<void> leaveVoiceRoom() async {
-    if (!_isInCall) return;
+    final engine = _engine;
+    final hadActiveSession = _isInCall || _isJoining || engine != null;
+    if (!hadActiveSession) return;
 
     debugPrint('[VoiceChat] Leaving voice room: teamId=$_currentTeamId');
 
-    // Notify others via WebSocket
-    if (_currentTeamId != null && _myUserId != null) {
-      _wsClient?.sendVoiceSignal('VOICE_LEAVE', {
-        'teamId': _currentTeamId,
-        'userId': _myUserId,
-      });
-    }
+    _isJoining = false;
 
-    _stopVoiceActivityPolling();
-
-    // Clean up local stream
-    if (_localStream != null) {
-      _localStream!.getTracks().forEach((track) {
-        track.stop();
-      });
-      await _localStream!.dispose();
-      _localStream = null;
+    if (engine != null) {
+      try {
+        await engine.leaveChannel();
+      } catch (e) {
+        debugPrint('[VoiceChat] Error leaving Agora channel: $e');
+      }
+      await _disposeEngine();
     }
-
-    // Clean up peer connections
-    for (var pc in _peerConnections.values) {
-      await pc.close();
-    }
-    _peerConnections.clear();
-    _pendingIceCandidates.clear();
-    _remoteDescriptionPeers.clear();
-    _lastSpeechDetectedAt.clear();
-    _lastAudioEnergy.clear();
-    _lastSamplesDuration.clear();
 
     _currentTeamId = null;
     _myUserId = null;
+    _currentAppId = null;
+    _localAgoraUid = null;
     _isInCall = false;
     _isInCallController.add(false);
-    _activeSpeakers.clear();
-    _activeSpeakersController.add({});
+    _agoraUidToUserId.clear();
+    _publishActiveSpeakers({});
   }
 
   void toggleMute(bool muted) {
     _isMuted = muted;
-    if (_localStream != null) {
-      _localStream!.getAudioTracks().forEach((track) {
-        track.enabled = !muted;
-      });
-    }
-    if (muted && _myUserId != null) {
-      _clearVoiceActivityStateForSource(_myUserId!);
-      if (_activeSpeakers.remove(_myUserId)) {
-        _activeSpeakersController.add(Set.from(_activeSpeakers));
-      }
-    }
     _isMutedController.add(muted);
-    debugPrint('[VoiceChat] Mute state changed: isMuted=$_isMuted');
-  }
 
-  void _handleVoiceSignal(WsIncomingEvent event) async {
-    if (!_isInCall) return;
+    if (_engine != null) {
+      unawaited(_applyLocalAudioState());
+    }
 
-    final data = event.data;
-    final teamId = data['teamId']?.toString();
-    if (teamId != _currentTeamId) return;
-
-    final senderId = data['userId']?.toString() ?? data['senderId']?.toString();
-    if (senderId == null || senderId == _myUserId) return;
-    if (_isDuplicateVoiceSignal(event, senderId)) return;
-
-    debugPrint('[VoiceChat] Received voice signal: op=${event.type}, sender=$senderId');
-
-    switch (event.type) {
-      case WsEventType.voiceJoin:
-        // A new member has joined. We (as the existing member) will initiate the connection.
-        await _initiateCall(senderId);
-        break;
-
-      case WsEventType.voiceLeave:
-        // A member has left. Clean up their connection.
-        await _closePeerConnection(senderId);
-        break;
-
-      case WsEventType.voiceOffer:
-        // We received an offer from senderId. We should answer it.
-        final sdp = data['sdp']?.toString();
-        if (sdp != null) {
-          await _handleOffer(senderId, sdp);
-        }
-        break;
-
-      case WsEventType.voiceAnswer:
-        // We received an answer from senderId.
-        final sdp = data['sdp']?.toString();
-        if (sdp != null) {
-          await _handleAnswer(senderId, sdp);
-        }
-        break;
-
-      case WsEventType.voiceIceCandidate:
-        // We received an ICE candidate.
-        final candidateMap = data['candidate'];
-        if (candidateMap != null) {
-          final candidate = RTCIceCandidate(
-            candidateMap['candidate'],
-            candidateMap['sdpMid'],
-            candidateMap['sdpMLineIndex'],
-          );
-          await _handleIceCandidate(senderId, candidate);
-        }
-        break;
-
-      default:
-        break;
+    if (muted && _myUserId != null) {
+      final nextSpeakers = Set<String>.from(_activeSpeakers)..remove(_myUserId);
+      _publishActiveSpeakers(nextSpeakers);
     }
   }
 
-  bool _isDuplicateVoiceSignal(WsIncomingEvent event, String senderId) {
-    final data = event.data;
-    final identity = switch (event.type) {
-      WsEventType.voiceOffer || WsEventType.voiceAnswer => data['sdp'],
-      WsEventType.voiceIceCandidate => data['candidate']?['candidate'],
-      _ => event.type.name,
-    };
-    final key = '${event.type.name}|$senderId|$identity';
-    final now = DateTime.now();
-    final previous = _recentVoiceSignals[key];
+  Future<void> _applyLocalAudioState() async {
+    final engine = _engine;
+    if (engine == null) return;
 
-    _recentVoiceSignals.removeWhere(
-      (_, receivedAt) => now.difference(receivedAt) > const Duration(seconds: 30),
+    try {
+      await engine.setEnableSpeakerphone(true);
+    } catch (e) {
+      debugPrint('[VoiceChat] Failed to enable speakerphone: $e');
+    }
+
+    try {
+      await engine.muteLocalAudioStream(_isMuted);
+      debugPrint('[VoiceChat] Applied local audio state: muted=$_isMuted');
+    } catch (e) {
+      debugPrint('[VoiceChat] Failed to apply mute state: muted=$_isMuted error=$e');
+    }
+  }
+
+  Future<void> _ensureEngine(String appId) async {
+    if (_engine != null && _currentAppId == appId) {
+      return;
+    }
+
+    await _disposeEngine();
+
+    final engine = createAgoraRtcEngine();
+    await engine.initialize(
+      RtcEngineContext(appId: appId),
     );
-    _recentVoiceSignals[key] = now;
 
-    if (previous != null && now.difference(previous) < const Duration(seconds: 30)) {
-      debugPrint(
-        '[VoiceChat] Ignored duplicate ${event.type.name} from peer: $senderId',
-      );
-      return true;
-    }
-    return false;
+    engine.registerEventHandler(
+      RtcEngineEventHandler(
+        onError: (err, msg) {
+          debugPrint('[VoiceChat] Agora error: err=$err msg=$msg');
+        },
+        onJoinChannelSuccess: (connection, uid) {
+          debugPrint('[VoiceChat] Agora join success: channel=${connection.channelId} uid=$uid');
+        },
+        onUserJoined: (connection, uid, elapsed) {
+          final userId = _agoraUidToUserId[uid];
+          debugPrint('[VoiceChat] Remote user joined Agora channel: uid=$uid userId=$userId elapsed=$elapsed');
+        },
+        onUserOffline: (connection, remoteUid, reason) {
+          final userId = _agoraUidToUserId[remoteUid];
+          debugPrint('[VoiceChat] Remote user offline: uid=$remoteUid userId=$userId reason=$reason');
+          if (userId == null) return;
+          final nextSpeakers = Set<String>.from(_activeSpeakers)..remove(userId);
+          _publishActiveSpeakers(nextSpeakers);
+        },
+        onLocalAudioStateChanged: (connection, state, reason) {
+          debugPrint('[VoiceChat] Local audio state: channel=${connection.channelId} state=$state reason=$reason muted=$_isMuted');
+        },
+        onRemoteAudioStateChanged: (connection, remoteUid, state, reason, elapsed) {
+          final userId = _agoraUidToUserId[remoteUid];
+          debugPrint('[VoiceChat] Remote audio state: channel=${connection.channelId} uid=$remoteUid userId=$userId state=$state reason=$reason elapsed=$elapsed');
+        },
+        onAudioPublishStateChanged: (channel, oldState, newState, elapsed) {
+          debugPrint('[VoiceChat] Audio publish state: channel=$channel old=$oldState new=$newState elapsed=$elapsed muted=$_isMuted');
+        },
+        onAudioSubscribeStateChanged: (channel, uid, oldState, newState, elapsed) {
+          final userId = _agoraUidToUserId[uid];
+          debugPrint('[VoiceChat] Audio subscribe state: channel=$channel uid=$uid userId=$userId old=$oldState new=$newState elapsed=$elapsed');
+        },
+        onUserMuteAudio: (connection, remoteUid, muted) {
+          final userId = _agoraUidToUserId[remoteUid];
+          debugPrint('[VoiceChat] Remote user mute changed: uid=$remoteUid userId=$userId muted=$muted');
+        },
+        onRemoteAudioStats: (connection, stats) {
+          debugPrint('[VoiceChat] Remote audio stats: channel=${connection.channelId} stats=${stats.toJson()}');
+        },
+        onAudioRoutingChanged: (routing) {
+          debugPrint('[VoiceChat] Audio routing changed: routing=$routing');
+        },
+        onPermissionError: (permissionType) {
+          debugPrint('[VoiceChat] Agora permission error: type=$permissionType');
+        },
+        onAudioVolumeIndication: (connection, speakers, speakerNumber, totalVolume) {
+          final nextSpeakers = <String>{};
+          for (final speaker in speakers) {
+            final volume = speaker.volume ?? 0;
+            final vad = speaker.vad ?? 0;
+
+            if (speaker.uid == 0) {
+              if (_myUserId != null && !_isMuted && (vad == 1 || volume > _speakerVolumeThreshold)) {
+                nextSpeakers.add(_myUserId!);
+              }
+              continue;
+            }
+
+            if (volume <= _speakerVolumeThreshold) {
+              continue;
+            }
+
+            final userId = _agoraUidToUserId[speaker.uid];
+            if (userId != null) {
+              nextSpeakers.add(userId);
+            }
+          }
+          _publishActiveSpeakers(nextSpeakers);
+        },
+        onTokenPrivilegeWillExpire: (connection, token) {
+          _renewAgoraToken();
+        },
+        onRequestToken: (connection) {
+          _renewAgoraToken();
+        },
+        onConnectionStateChanged: (connection, state, reason) {
+          debugPrint('[VoiceChat] Agora connection state: state=$state reason=$reason');
+        },
+        onLeaveChannel: (connection, stats) {
+          debugPrint('[VoiceChat] Left Agora channel: channel=${connection.channelId} stats=${stats.toJson()}');
+        },
+      ),
+    );
+
+    await engine.enableAudio();
+    await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    await engine.setAudioProfile(
+      profile: AudioProfileType.audioProfileDefault,
+      scenario: AudioScenarioType.audioScenarioGameStreaming,
+    );
+    await engine.enableAudioVolumeIndication(
+      interval: _volumeIndicationIntervalMs,
+      smooth: 3,
+      reportVad: true,
+    );
+
+    _engine = engine;
+    _currentAppId = appId;
   }
 
-  Future<void> _initiateCall(String peerId) async {
-    debugPrint('[VoiceChat] Initiating call to peer: $peerId');
-    if (_peerConnections.containsKey(peerId)) {
-      await _closePeerConnection(peerId);
-    }
+  Future<void> _disposeEngine() async {
+    final engine = _engine;
+    _engine = null;
+    if (engine == null) return;
 
-    final pc = await _createPeerConnection(peerId);
-    _peerConnections[peerId] = pc;
-
-    // Create SDP Offer
     try {
-      final offer = await pc.createOffer(_sdpConstraints);
-      await pc.setLocalDescription(offer);
-
-      _wsClient?.sendVoiceSignal('VOICE_OFFER', {
-        'teamId': _currentTeamId,
-        'userId': _myUserId,
-        'targetId': peerId,
-        'sdp': offer.sdp,
-      });
-      debugPrint('[VoiceChat] Sent VOICE_OFFER to peer: $peerId');
+      await engine.release();
     } catch (e) {
-      debugPrint('[VoiceChat] Error creating offer to peer $peerId: $e');
+      debugPrint('[VoiceChat] Error releasing Agora engine: $e');
     }
   }
 
-  Future<void> _handleOffer(String peerId, String sdp) async {
-    debugPrint('[VoiceChat] Handling offer from peer: $peerId');
-    if (_peerConnections.containsKey(peerId)) {
-      await _closePeerConnection(peerId);
+  Future<void> _renewAgoraToken() async {
+    final teamId = _currentTeamId;
+    final engine = _engine;
+    if (teamId == null || engine == null || !_isInCall) {
+      return;
     }
 
-    final pc = await _createPeerConnection(peerId);
-    _peerConnections[peerId] = pc;
-
     try {
-      final description = RTCSessionDescription(sdp, 'offer');
-      await pc.setRemoteDescription(description);
-      _remoteDescriptionPeers.add(peerId);
-
-      // Process any ice candidates received before the offer description was set
-      if (_pendingIceCandidates.containsKey(peerId)) {
-        for (var candidate in _pendingIceCandidates[peerId]!) {
-          await pc.addCandidate(candidate);
-        }
-        _pendingIceCandidates.remove(peerId);
-      }
-
-      final answer = await pc.createAnswer(_sdpConstraints);
-      await pc.setLocalDescription(answer);
-
-      _wsClient?.sendVoiceSignal('VOICE_ANSWER', {
-        'teamId': _currentTeamId,
-        'userId': _myUserId,
-        'targetId': peerId,
-        'sdp': answer.sdp,
-      });
-      debugPrint('[VoiceChat] Sent VOICE_ANSWER to peer: $peerId');
-    } catch (e) {
-      debugPrint('[VoiceChat] Error handling offer from peer $peerId: $e');
-    }
-  }
-
-  Future<void> _handleAnswer(String peerId, String sdp) async {
-    debugPrint('[VoiceChat] Handling answer from peer: $peerId');
-    final pc = _peerConnections[peerId];
-    if (pc == null) return;
-
-    try {
-      final signalingState = await pc.getSignalingState();
-      if (signalingState != RTCSignalingState.RTCSignalingStateHaveLocalOffer) {
-        debugPrint(
-          '[VoiceChat] Ignored answer from $peerId in signaling state: $signalingState',
-        );
+      final voiceToken = await _teamApiService.getVoiceToken(teamId);
+      final token = (voiceToken['token']?.toString() ?? '').trim();
+      if (token.isEmpty) {
         return;
       }
-      final description = RTCSessionDescription(sdp, 'answer');
-      await pc.setRemoteDescription(description);
-      _remoteDescriptionPeers.add(peerId);
-      debugPrint('[VoiceChat] Remote description set for peer: $peerId');
+      _syncMembersFromTokenResponse(voiceToken, _myUserId);
+      await engine.renewToken(token);
+      debugPrint('[VoiceChat] Renewed Agora token');
     } catch (e) {
-      debugPrint('[VoiceChat] Error setting remote description for peer $peerId: $e');
+      debugPrint('[VoiceChat] Error renewing Agora token: $e');
     }
   }
 
-  Future<void> _handleIceCandidate(String peerId, RTCIceCandidate candidate) async {
-    final pc = _peerConnections[peerId];
-    if (pc != null && _remoteDescriptionPeers.contains(peerId)) {
-      await pc.addCandidate(candidate);
-      debugPrint('[VoiceChat] Added ICE candidate directly for peer: $peerId');
-    } else {
-      _pendingIceCandidates.putIfAbsent(peerId, () => []).add(candidate);
-      debugPrint('[VoiceChat] Stored pending ICE candidate for peer: $peerId');
+  void _syncMembersFromTokenResponse(Map<String, dynamic> payload, String? fallbackUserId) {
+    final members = payload['members'];
+    if (members is! List) {
+      if (_localAgoraUid != null && fallbackUserId != null) {
+        _agoraUidToUserId[_localAgoraUid!] = fallbackUserId;
+      }
+      return;
+    }
+
+    _agoraUidToUserId.clear();
+    for (final entry in members) {
+      if (entry is! Map) continue;
+      final userId = entry['userId']?.toString();
+      final agoraUid = (entry['agoraUid'] as num?)?.toInt();
+      if (userId == null || userId.isEmpty || agoraUid == null) continue;
+      _agoraUidToUserId[agoraUid] = userId;
+    }
+
+    if (_localAgoraUid != null && fallbackUserId != null) {
+      _agoraUidToUserId[_localAgoraUid!] = fallbackUserId;
     }
   }
 
-  void _startVoiceActivityPolling() {
-    _voiceActivityTimer?.cancel();
-    _voiceActivityTimer = Timer.periodic(_voiceActivityPollInterval, (_) {
-      _pollVoiceActivity();
-    });
-    _pollVoiceActivity();
-  }
-
-  void _stopVoiceActivityPolling() {
-    _voiceActivityTimer?.cancel();
-    _voiceActivityTimer = null;
-    _isPollingVoiceActivity = false;
-  }
-
-  Future<void> _pollVoiceActivity() async {
-    if (!_isInCall || _isPollingVoiceActivity) return;
-
-    _isPollingVoiceActivity = true;
-    try {
-      final now = DateTime.now();
-      final nextSpeakers = <String>{};
-
-      if (!_isMuted && _myUserId != null) {
-        final localLevel = await _getLocalAudioLevel();
-        if (_isSourceSpeaking(_myUserId!, localLevel, now)) {
-          nextSpeakers.add(_myUserId!);
-        }
-      }
-
-      for (final entry in _peerConnections.entries) {
-        final remoteLevel = await _getRemoteAudioLevel(entry.value, entry.key);
-        if (_isSourceSpeaking(entry.key, remoteLevel, now)) {
-          nextSpeakers.add(entry.key);
-        }
-      }
-
-      if (_activeSpeakers.length != nextSpeakers.length ||
-          !_activeSpeakers.containsAll(nextSpeakers)) {
-        _activeSpeakers
-          ..clear()
-          ..addAll(nextSpeakers);
-        _activeSpeakersController.add(Set.from(_activeSpeakers));
-      }
-    } finally {
-      _isPollingVoiceActivity = false;
-    }
-  }
-
-  bool _isSourceSpeaking(String sourceId, double? level, DateTime now) {
-    if (level != null) {
-      final threshold = _activeSpeakers.contains(sourceId)
-          ? _continueSpeakingThreshold
-          : _startSpeakingThreshold;
-      if (level >= threshold) {
-        _lastSpeechDetectedAt[sourceId] = now;
-        return true;
-      }
+  void _publishActiveSpeakers(Set<String> nextSpeakers) {
+    if (_activeSpeakers.length == nextSpeakers.length && _activeSpeakers.containsAll(nextSpeakers)) {
+      return;
     }
 
-    final lastDetectedAt = _lastSpeechDetectedAt[sourceId];
-    if (lastDetectedAt == null) {
-      return false;
-    }
-
-    final stillHolding = now.difference(lastDetectedAt) <= _speakerHoldDuration;
-    if (!stillHolding) {
-      _lastSpeechDetectedAt.remove(sourceId);
-    }
-    return stillHolding;
-  }
-
-  Future<double?> _getLocalAudioLevel() async {
-    for (final pc in _peerConnections.values) {
-      final senders = await pc.getSenders();
-      for (final sender in senders) {
-        final track = sender.track;
-        if (track?.kind != 'audio') continue;
-        final level = _extractAudioLevel(await sender.getStats(), _myUserId!);
-        if (level != null) {
-          return level;
-        }
-      }
-    }
-    return null;
-  }
-
-  Future<double?> _getRemoteAudioLevel(RTCPeerConnection pc, String peerId) async {
-    final receivers = await pc.getReceivers();
-    for (final receiver in receivers) {
-      final track = receiver.track;
-      if (track?.kind != 'audio') continue;
-      final level = _extractAudioLevel(await receiver.getStats(), peerId);
-      if (level != null) {
-        return level;
-      }
-    }
-    return null;
-  }
-
-  double? _extractAudioLevel(List<StatsReport> reports, String sourceId) {
-    for (final report in reports) {
-      if (!_isAudioStatsReport(report)) continue;
-
-      final directLevel = _parseDouble(report.values['audioLevel']);
-      if (directLevel != null) {
-        return directLevel;
-      }
-
-      final totalAudioEnergy = _parseDouble(report.values['totalAudioEnergy']);
-      final totalSamplesDuration = _parseDouble(report.values['totalSamplesDuration']);
-      if (totalAudioEnergy == null || totalSamplesDuration == null) {
-        continue;
-      }
-
-      final previousEnergy = _lastAudioEnergy[sourceId];
-      final previousDuration = _lastSamplesDuration[sourceId];
-      _lastAudioEnergy[sourceId] = totalAudioEnergy;
-      _lastSamplesDuration[sourceId] = totalSamplesDuration;
-
-      if (previousEnergy == null || previousDuration == null) {
-        continue;
-      }
-
-      final energyDelta = totalAudioEnergy - previousEnergy;
-      final durationDelta = totalSamplesDuration - previousDuration;
-      if (energyDelta > 0 && durationDelta > 0) {
-        return energyDelta / durationDelta;
-      }
-    }
-    return null;
-  }
-
-  bool _isAudioStatsReport(StatsReport report) {
-    final type = report.type;
-    if (type != 'media-source' &&
-        type != 'track' &&
-        type != 'outbound-rtp' &&
-        type != 'inbound-rtp' &&
-        type != 'remote-inbound-rtp') {
-      return false;
-    }
-
-    final mediaType = report.values['mediaType']?.toString();
-    final kind = report.values['kind']?.toString();
-    final trackIdentifier = report.values['trackIdentifier']?.toString();
-    return mediaType == 'audio' ||
-        kind == 'audio' ||
-        trackIdentifier?.contains('audio') == true ||
-        report.values.containsKey('audioLevel') ||
-        report.values.containsKey('totalAudioEnergy');
-  }
-
-  double? _parseDouble(dynamic value) {
-    if (value is num) return value.toDouble();
-    if (value is String) return double.tryParse(value);
-    return null;
-  }
-
-  void _clearVoiceActivityStateForSource(String sourceId) {
-    _lastSpeechDetectedAt.remove(sourceId);
-    _lastAudioEnergy.remove(sourceId);
-    _lastSamplesDuration.remove(sourceId);
-  }
-
-  Future<RTCPeerConnection> _createPeerConnection(String peerId) async {
-    final pc = await createPeerConnection(_rtcConfig, _sdpConstraints);
-
-    // Add local stream tracks to peer connection
-    if (_localStream != null) {
-      _localStream!.getTracks().forEach((track) {
-        pc.addTrack(track, _localStream!);
-      });
-    }
-
-    pc.onIceCandidate = (candidate) {
-      final candidateType = candidate.candidate?.contains(' typ relay') == true
-          ? 'relay (TURN)'
-          : 'direct';
-      debugPrint(
-        '[VoiceChat] Local ICE candidate gathered for peer: $peerId [$candidateType]',
-      );
-      _wsClient?.sendVoiceSignal('VOICE_ICE_CANDIDATE', {
-        'teamId': _currentTeamId,
-        'userId': _myUserId,
-        'targetId': peerId,
-        'candidate': {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        }
-      });
-    };
-
-    pc.onTrack = (event) {
-      debugPrint('[VoiceChat] Remote track received from peer: $peerId');
-      if (event.streams.isNotEmpty) {
-        _onRemoteStreamAdded(peerId, event.streams[0]);
-      }
-    };
-
-    pc.onConnectionState = (state) {
-      debugPrint('[VoiceChat] Peer connection state change: $peerId -> $state');
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-          state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
-        _activeSpeakers.remove(peerId);
-        _lastSpeechDetectedAt.remove(peerId);
-        _activeSpeakersController.add(Set.from(_activeSpeakers));
-      }
-    };
-
-    return pc;
-  }
-
-  void _onRemoteStreamAdded(String peerId, MediaStream stream) {
-    debugPrint('[VoiceChat] Remote audio stream active from peer: $peerId');
-    // flutter_webrtc will automatically play audio-only tracks when received.
-    // However, to configure audio route or sound levels, we can interact with stream here if needed.
-    stream.getAudioTracks().forEach((track) {
-      track.enabled = true;
-    });
-  }
-
-  Future<void> _closePeerConnection(String peerId) async {
-    final pc = _peerConnections.remove(peerId);
-    if (pc != null) {
-      await pc.close();
-      debugPrint('[VoiceChat] Closed peer connection for: $peerId');
-    }
-    _pendingIceCandidates.remove(peerId);
-    _remoteDescriptionPeers.remove(peerId);
-    _activeSpeakers.remove(peerId);
+    _activeSpeakers
+      ..clear()
+      ..addAll(nextSpeakers);
     _activeSpeakersController.add(Set.from(_activeSpeakers));
   }
 
-  void dispose() {
-    _wsSubscription?.cancel();
-    leaveVoiceRoom();
-    _isInCallController.close();
-    _isMutedController.close();
-    _activeSpeakersController.close();
+  int _baseAgoraUid(String userId) {
+    var crc = 0xffffffff;
+    for (final byte in utf8.encode(userId)) {
+      crc = _crcTable[(crc ^ byte) & 0xff] ^ (crc >> 8);
+    }
+    final value = (crc ^ 0xffffffff) & _maxAgoraUid;
+    return value == 0 ? 1 : value;
+  }
+
+  Future<void> dispose() async {
+    await leaveVoiceRoom();
+    await _disposeEngine();
+    await _isInCallController.close();
+    await _isMutedController.close();
+    await _activeSpeakersController.close();
   }
 }

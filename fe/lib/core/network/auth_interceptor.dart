@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/api_constants.dart';
+import '../navigation/app_navigator.dart';
+import '../websocket/websocket_client.dart';
 import 'dio_client.dart';
 
 /// Lưu trữ access token để AuthInterceptor đọc khi retry.
@@ -110,6 +112,15 @@ Future<Response<dynamic>> _refreshAndRetry(
   }
 }
 
+Future<void> _logoutAndRedirectToLogin(TokenRepository tokenRepo) async {
+  await tokenRepo.clearAll();
+  WebSocketClient.instance.disconnect();
+  final navigator = appNavigatorKey.currentState;
+  if (navigator != null) {
+    navigator.pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+}
+
 class AuthInterceptor extends Interceptor {
   final TokenRepository tokenRepo;
 
@@ -148,6 +159,12 @@ class AuthInterceptor extends Interceptor {
         return handler.next(e);
       }
     }
+
+    if (err.response?.statusCode == 403) {
+      debugPrint('[AUTH] Got 403, logging out and redirecting to login');
+      await _logoutAndRedirectToLogin(tokenRepo);
+    }
+
     handler.next(err);
   }
 }

@@ -80,6 +80,13 @@ class TeamApiService {
     if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions);
   }
 
+  Future<Map<String, dynamic>> getVoiceToken(String teamId) async {
+    final resp = await DioClient.get('${ApiConstants.teams}/$teamId${ApiConstants.teamVoiceTokenSuffix}');
+    final json = resp.data as Map<String, dynamic>;
+    if (json['success'] != true) throw DioException(requestOptions: resp.requestOptions);
+    return json['data'] as Map<String, dynamic>;
+  }
+
   Future<void> leaveTeam(String teamId) async {
     final resp = await DioClient.post('${ApiConstants.teams}/$teamId/leave');
     final json = resp.data as Map<String, dynamic>;

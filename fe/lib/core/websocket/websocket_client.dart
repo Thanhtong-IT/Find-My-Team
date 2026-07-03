@@ -37,12 +37,6 @@ enum WsEventType {
   // Typing
   typingStart,
   typingStop,
-  // Voice Chat - WebRTC signaling
-  voiceJoin,
-  voiceLeave,
-  voiceOffer,
-  voiceAnswer,
-  voiceIceCandidate,
   // Generic
   heartbeatAck,
   unknown,
@@ -277,16 +271,6 @@ class WebSocketClient {
         return WsEventType.typingStart;
       case 'TYPING_STOP':
         return WsEventType.typingStop;
-      case 'VOICE_JOIN':
-        return WsEventType.voiceJoin;
-      case 'VOICE_LEAVE':
-        return WsEventType.voiceLeave;
-      case 'VOICE_OFFER':
-        return WsEventType.voiceOffer;
-      case 'VOICE_ANSWER':
-        return WsEventType.voiceAnswer;
-      case 'VOICE_ICE_CANDIDATE':
-        return WsEventType.voiceIceCandidate;
       default:
         return WsEventType.unknown;
     }
@@ -367,13 +351,6 @@ class WebSocketClient {
     });
   }
 
-  /// Send a voice chat signaling message to the team room.
-  void sendVoiceSignal(String type, Map<String, dynamic> data) {
-    _send({
-      'op': type,
-      'data': data,
-    });
-  }
 
   void resume() {
     if (_lastEventId != null) {
