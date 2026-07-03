@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/constants/constants.dart';
 import 'core/di/injection.dart';
+import 'core/navigation/app_navigator.dart';
 import 'core/repository/secure_storage_repository.dart';
 import 'core/websocket/websocket_client.dart';
 import 'core/connectivity/connectivity_bloc.dart';
@@ -67,6 +68,7 @@ class FindMyTeamApp extends StatelessWidget {
         // ChatBloc tạo riêng trong CommunityChatScreen với community/channel cụ thể
       ],
       child: MaterialApp(
+        navigatorKey: appNavigatorKey,
         title: 'Find My Team',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(

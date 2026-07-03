@@ -87,13 +87,6 @@ class AppEventBus {
   Stream<WsIncomingEvent> get typingStream => stream.where((e) =>
       e.type == WsEventType.typingStart || e.type == WsEventType.typingStop);
 
-  /// Voice chat signaling events (WebRTC)
-  Stream<WsIncomingEvent> get voiceEventStream => stream.where((e) =>
-      e.type == WsEventType.voiceJoin ||
-      e.type == WsEventType.voiceLeave ||
-      e.type == WsEventType.voiceOffer ||
-      e.type == WsEventType.voiceAnswer ||
-      e.type == WsEventType.voiceIceCandidate);
 
   /// Register WebSocket client - safe to call multiple times.
   /// Nếu đã register rồi, sẽ re-register để đảm bảo nhận được events sau reconnect.

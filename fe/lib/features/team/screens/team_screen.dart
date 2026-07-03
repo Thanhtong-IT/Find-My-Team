@@ -154,6 +154,9 @@ class _TeamScreenState extends State<TeamScreen> {
             (m) => m.userId == myUserId,
             orElse: () => TeamMemberModel(id: '', userId: myUserId, displayName: ''),
           );
+          voiceService.syncTeamMembers(
+            currentTeam.members.map((member) => member.userId).toList(),
+          );
 
           if (!voiceService.isInCall && !voiceService.isJoining) {
             voiceService.joinVoiceRoom(currentTeam.id, myUserId).then((success) {

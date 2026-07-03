@@ -37,12 +37,6 @@ enum WsEventType {
   // Typing
   typingStart,
   typingStop,
-  // Voice Chat - WebRTC signaling
-  voiceJoin,
-  voiceLeave,
-  voiceOffer,
-  voiceAnswer,
-  voiceIceCandidate,
   // Generic
   heartbeatAck,
   unknown,
@@ -82,8 +76,11 @@ class WebSocketClient {
   static final WebSocketClient instance = WebSocketClient._();
 
   WebSocketChannel? _channel;
+  StreamSubscription<dynamic>? _channelSubscription;
   Timer? _heartbeatTimer;
   Timer? _reconnectTimer;
+  int _connectionGeneration = 0;
+  int? _reconnectPendingGeneration;
 
   final _eventController = StreamController<WsIncomingEvent>.broadcast();
   final _statusController = StreamController<WsConnectionStatus>.broadcast();
@@ -114,6 +111,12 @@ class WebSocketClient {
   int _reconnectAttempts = 0;
 
   void connect({required String url, required String token}) {
+    final sameConnection = _wsUrl == url && _token == token;
+    if (sameConnection && _status != WsConnectionStatus.disconnected) {
+      return;
+    }
+
+    _closeCurrentChannel();
     _wsUrl = url;
     _token = token;
     _reconnectAttempts = 0;
@@ -128,6 +131,8 @@ class WebSocketClient {
     }
 
     _reconnectTimer?.cancel();
+    _closeCurrentChannel();
+    final generation = ++_connectionGeneration;
     _setStatus(WsConnectionStatus.connecting);
     debugPrint('[WS] Đang kết nối...');
 
@@ -135,14 +140,39 @@ class WebSocketClient {
       final uri = Uri.parse('${_wsUrl!}?token=$_token');
       _channel = WebSocketChannel.connect(uri);
 
-      _channel!.stream.listen(
-        _onData,
-        onError: _onError,
-        onDone: _onDone,
+      _channelSubscription = _channel!.stream.listen(
+        (raw) {
+          if (generation == _connectionGeneration) _onData(raw);
+        },
+        onError: (Object error) {
+          if (generation == _connectionGeneration) {
+            _onError(error);
+            _scheduleReconnect();
+          }
+        },
+        onDone: () {
+          if (generation == _connectionGeneration) {
+            _onDone();
+          }
+        },
       );
     } catch (e) {
       debugPrint('[WS] Lỗi kết nối: $e');
       _scheduleReconnect();
+    }
+  }
+
+  void _closeCurrentChannel() {
+    _heartbeatTimer?.cancel();
+    final subscription = _channelSubscription;
+    final channel = _channel;
+    _channelSubscription = null;
+    _channel = null;
+    if (subscription != null) {
+      unawaited(subscription.cancel());
+    }
+    if (channel != null) {
+      unawaited(channel.sink.close());
     }
   }
 
@@ -249,16 +279,6 @@ class WebSocketClient {
         return WsEventType.typingStart;
       case 'TYPING_STOP':
         return WsEventType.typingStop;
-      case 'VOICE_JOIN':
-        return WsEventType.voiceJoin;
-      case 'VOICE_LEAVE':
-        return WsEventType.voiceLeave;
-      case 'VOICE_OFFER':
-        return WsEventType.voiceOffer;
-      case 'VOICE_ANSWER':
-        return WsEventType.voiceAnswer;
-      case 'VOICE_ICE_CANDIDATE':
-        return WsEventType.voiceIceCandidate;
       default:
         return WsEventType.unknown;
     }
@@ -295,6 +315,10 @@ class WebSocketClient {
   }
 
   void _scheduleReconnect() {
+    final generation = _connectionGeneration;
+    if (_reconnectPendingGeneration == generation) return;
+    _reconnectPendingGeneration = generation;
+
     if (_reconnectAttempts >= _maxReconnectAttempts) {
       _setStatus(WsConnectionStatus.disconnected);
       return;
@@ -311,6 +335,8 @@ class WebSocketClient {
     _reconnectAttempts++;
 
     _reconnectTimer = Timer(cappedDelay, () {
+      if (_reconnectPendingGeneration != generation) return;
+      _reconnectPendingGeneration = null;
       _doConnect();
     });
   }
@@ -338,13 +364,6 @@ class WebSocketClient {
     });
   }
 
-  /// Send a voice chat signaling message to the team room.
-  void sendVoiceSignal(String type, Map<String, dynamic> data) {
-    _send({
-      'op': type,
-      'data': data,
-    });
-  }
 
   void resume() {
     if (_lastEventId != null) {
@@ -412,10 +431,11 @@ class WebSocketClient {
 
   /// Ngắt kết nối WebSocket (khi logout).
   void disconnect() {
+    _connectionGeneration++;
+    _reconnectPendingGeneration = null;
     _heartbeatTimer?.cancel();
     _reconnectTimer?.cancel();
-    _channel?.sink.close();
-    _channel = null;
+    _closeCurrentChannel();
     _subscribedRooms.clear();
     _processedEventIds.clear();
     _reconnectAttempts = 0;
