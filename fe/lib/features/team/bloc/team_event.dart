@@ -99,9 +99,16 @@ class TeamMemberJoinedEvent extends TeamEvent {
 class TeamMemberLeftEvent extends TeamEvent {
   final String teamId;
   final String userId;
-  const TeamMemberLeftEvent({required this.teamId, required this.userId});
+  final bool isKick;
+  final List<String>? remainingMembers;
+  const TeamMemberLeftEvent({
+    required this.teamId,
+    required this.userId,
+    this.isKick = false,
+    this.remainingMembers,
+  });
   @override
-  List<Object?> get props => [teamId, userId];
+  List<Object?> get props => [teamId, userId, isKick, remainingMembers];
 }
 
 class TeamMemberReadyEvent extends TeamEvent {

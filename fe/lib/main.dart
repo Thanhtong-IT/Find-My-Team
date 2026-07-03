@@ -24,6 +24,7 @@ import 'features/explore/bloc/explore_bloc.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
+
   await setupDependencies();
   runApp(const FindMyTeamApp());
 }
@@ -92,42 +93,42 @@ class FindMyTeamApp extends StatelessWidget {
         },
         builder: (context, child) {
           return BlocListener<ConnectivityBloc, ConnectivityState>(
-            listener: (context, state) {
-              if (state.isOffline) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Row(
-                      children: [
-                        Icon(Icons.wifi_off_rounded, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('Mất kết nối mạng. Đang thử lại...'),
-                      ],
+              listener: (context, state) {
+                if (state.isOffline) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Row(
+                        children: [
+                          Icon(Icons.wifi_off_rounded, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Text('Mất kết nối mạng. Đang thử lại...'),
+                        ],
+                      ),
+                      backgroundColor: Colors.amber.shade700,
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 3),
                     ),
-                    backgroundColor: Colors.amber.shade700,
-                    behavior: SnackBarBehavior.floating,
-                    duration: const Duration(seconds: 3),
-                  ),
-                );
-              } else if (state.status == ConnectivityStatus.online) {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: const Row(
-                      children: [
-                        Icon(Icons.wifi_rounded, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('Đã kết nối lại'),
-                      ],
+                  );
+                } else if (state.status == ConnectivityStatus.online) {
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Row(
+                        children: [
+                          Icon(Icons.wifi_rounded, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Text('Đã kết nối lại'),
+                        ],
+                      ),
+                      backgroundColor: Colors.green.shade600,
+                      behavior: SnackBarBehavior.floating,
+                      duration: const Duration(seconds: 2),
                     ),
-                    backgroundColor: Colors.green.shade600,
-                    behavior: SnackBarBehavior.floating,
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              }
-            },
-            child: child ?? const SizedBox.shrink(),
-          );
+                  );
+                }
+              },
+              child: child ?? const SizedBox.shrink(),
+            );
         },
       ),
     );

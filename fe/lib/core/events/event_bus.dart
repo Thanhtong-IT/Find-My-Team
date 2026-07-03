@@ -96,10 +96,10 @@ class AppEventBus {
       e.type == WsEventType.voiceIceCandidate);
 
   /// Register WebSocket client - safe to call multiple times.
+  /// Nếu đã register rồi, sẽ re-register để đảm bảo nhận được events sau reconnect.
   void register(WebSocketClient ws) {
-    if (_isRegistered) {
-      return; // Already registered
-    }
+    // Cancel previous subscription if exists
+    _wsSubscription?.cancel();
 
     _wsSubscription = ws.eventStream.listen((event) {
       _subController.add(event);

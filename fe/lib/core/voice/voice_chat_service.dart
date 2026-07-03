@@ -14,8 +14,9 @@ class VoiceChatService {
   StreamSubscription? _wsSubscription;
 
   MediaStream? _localStream;
+  final Map<String, MediaStream> _remoteStreams = {};
   final Map<String, RTCPeerConnection> _peerConnections = {};
-  
+
   String? _currentTeamId;
   String? _myUserId;
   bool _isMuted = true;
@@ -83,6 +84,7 @@ class VoiceChatService {
       });
     }
 
+    debugPrint('[VoiceChat] RTC Config ICE servers: $iceServers');
     return {'iceServers': iceServers};
   }
 
@@ -98,34 +100,41 @@ class VoiceChatService {
     _wsClient = wsClient;
     _wsSubscription?.cancel();
     _wsSubscription = AppEventBus.instance.voiceEventStream.listen(_handleVoiceSignal);
+    debugPrint('[Voice] Service initialized');
   }
 
   Future<bool> joinVoiceRoom(String teamId, String myUserId) async {
     if (_isInCall && _currentTeamId == teamId) {
+      debugPrint('[Voice] Already in call for team: $teamId');
       return true;
     }
     if (_isJoining && _currentTeamId == teamId) {
+      debugPrint('[Voice] Already joining team: $teamId');
       return false;
     }
     if (_isInCall) {
+      debugPrint('[Voice] Leaving current call before joining new one');
       await leaveVoiceRoom();
     }
 
-    debugPrint('[VoiceChat] Joining voice room: teamId=$teamId, myUserId=$myUserId');
+    debugPrint('[Voice] Joining voice room: teamId=$teamId, myUserId=$myUserId');
+    debugPrint('[Voice] Joining voice room: $teamId'); // Will update to true if successful
 
     _isJoining = true;
     _currentTeamId = teamId;
     _myUserId = myUserId;
 
     // Request Microphone permission
+    debugPrint('[Voice] Requesting microphone permission...');
     final permissionStatus = await Permission.microphone.request();
     if (!permissionStatus.isGranted) {
-      debugPrint('[VoiceChat] Microphone permission denied');
+      debugPrint('[Voice] Microphone permission denied');
       _isJoining = false;
       _currentTeamId = null;
       _myUserId = null;
       return false;
     }
+    debugPrint('[Voice] Microphone permission granted');
 
     try {
       // Get local audio stream
@@ -154,10 +163,10 @@ class VoiceChatService {
         'userId': myUserId,
       });
 
-      debugPrint('[VoiceChat] Local stream obtained and VOICE_JOIN sent');
+      debugPrint('[Voice] Joined voice room: $teamId');
       return true;
     } catch (e) {
-      debugPrint('[VoiceChat] Error joining voice room: $e');
+      debugPrint('[Voice] Joining voice room failed: $teamId - $e');
       _isJoining = false;
       await leaveVoiceRoom();
       return false;
@@ -165,9 +174,12 @@ class VoiceChatService {
   }
 
   Future<void> leaveVoiceRoom() async {
-    if (!_isInCall) return;
+    if (!_isInCall) {
+      debugPrint('[Voice] Leave called but not in call');
+      return;
+    }
 
-    debugPrint('[VoiceChat] Leaving voice room: teamId=$_currentTeamId');
+    debugPrint('[Voice] Leaving voice room: teamId=$_currentTeamId');
 
     // Notify others via WebSocket
     if (_currentTeamId != null && _myUserId != null) {
@@ -188,6 +200,13 @@ class VoiceChatService {
       _localStream = null;
     }
 
+    // Clean up remote streams
+    for (var entry in _remoteStreams.entries) {
+      entry.value.getTracks().forEach((track) => track.stop());
+      await entry.value.dispose();
+    }
+    _remoteStreams.clear();
+
     // Clean up peer connections
     for (var pc in _peerConnections.values) {
       await pc.close();
@@ -205,6 +224,8 @@ class VoiceChatService {
     _isInCallController.add(false);
     _activeSpeakers.clear();
     _activeSpeakersController.add({});
+
+    debugPrint('[Voice] Left voice room');
   }
 
   void toggleMute(bool muted) {
@@ -221,52 +242,61 @@ class VoiceChatService {
       }
     }
     _isMutedController.add(muted);
-    debugPrint('[VoiceChat] Mute state changed: isMuted=$_isMuted');
+    debugPrint('[Voice] Mute toggled: isMuted=$_isMuted');
   }
 
   void _handleVoiceSignal(WsIncomingEvent event) async {
-    if (!_isInCall) return;
+    if (!_isInCall) {
+      debugPrint('[Voice] Ignoring voice signal - not in call');
+      return;
+    }
 
     final data = event.data;
     final teamId = data['teamId']?.toString();
-    if (teamId != _currentTeamId) return;
+    if (teamId != _currentTeamId) {
+      debugPrint('[Voice] Ignoring voice signal - wrong team: $teamId vs $_currentTeamId');
+      return;
+    }
 
     final senderId = data['userId']?.toString() ?? data['senderId']?.toString();
-    if (senderId == null || senderId == _myUserId) return;
+    if (senderId == null || senderId == _myUserId) {
+      debugPrint('[Voice] Ignoring voice signal - self signal');
+      return;
+    }
 
-    debugPrint('[VoiceChat] Received voice signal: op=${event.type}, sender=$senderId');
+    debugPrint('[Voice] Received: ${event.type} from $senderId');
 
     switch (event.type) {
       case WsEventType.voiceJoin:
-        // A new member has joined. We (as the existing member) will initiate the connection.
+        debugPrint('[Voice] User joined: $senderId - initiating call');
         await _initiateCall(senderId);
         break;
 
       case WsEventType.voiceLeave:
-        // A member has left. Clean up their connection.
+        debugPrint('[Voice] User left: $senderId - closing peer connection');
         await _closePeerConnection(senderId);
         break;
 
       case WsEventType.voiceOffer:
-        // We received an offer from senderId. We should answer it.
         final sdp = data['sdp']?.toString();
         if (sdp != null) {
+          debugPrint('[Voice] Received offer from $senderId, SDP: ${sdp.length} chars');
           await _handleOffer(senderId, sdp);
         }
         break;
 
       case WsEventType.voiceAnswer:
-        // We received an answer from senderId.
         final sdp = data['sdp']?.toString();
         if (sdp != null) {
+          debugPrint('[Voice] Received answer from $senderId, SDP: ${sdp.length} chars');
           await _handleAnswer(senderId, sdp);
         }
         break;
 
       case WsEventType.voiceIceCandidate:
-        // We received an ICE candidate.
         final candidateMap = data['candidate'];
         if (candidateMap != null) {
+          debugPrint('[Voice] Received ICE candidate from $senderId');
           final candidate = RTCIceCandidate(
             candidateMap['candidate'],
             candidateMap['sdpMid'],
@@ -277,13 +307,15 @@ class VoiceChatService {
         break;
 
       default:
+        debugPrint('[Voice] Unknown voice event type: ${event.type}');
         break;
     }
   }
 
   Future<void> _initiateCall(String peerId) async {
-    debugPrint('[VoiceChat] Initiating call to peer: $peerId');
+    debugPrint('[Voice] Initiating call to: $peerId');
     if (_peerConnections.containsKey(peerId)) {
+      debugPrint('[Voice] Existing peer connection found, closing first');
       await _closePeerConnection(peerId);
     }
 
@@ -292,8 +324,10 @@ class VoiceChatService {
 
     // Create SDP Offer
     try {
+      debugPrint('[Voice] Creating offer...');
       final offer = await pc.createOffer(_sdpConstraints);
       await pc.setLocalDescription(offer);
+      debugPrint('[Voice] Offer created, SDP: ${offer.sdp?.length ?? 0} chars');
 
       _wsClient?.sendVoiceSignal('VOICE_OFFER', {
         'teamId': _currentTeamId,
@@ -301,14 +335,14 @@ class VoiceChatService {
         'targetId': peerId,
         'sdp': offer.sdp,
       });
-      debugPrint('[VoiceChat] Sent VOICE_OFFER to peer: $peerId');
+      debugPrint('[Voice] Sent VOICE_OFFER to: $peerId');
     } catch (e) {
-      debugPrint('[VoiceChat] Error creating offer to peer $peerId: $e');
+      debugPrint('[Voice] Error creating offer to $peerId: $e');
     }
   }
 
   Future<void> _handleOffer(String peerId, String sdp) async {
-    debugPrint('[VoiceChat] Handling offer from peer: $peerId');
+    debugPrint('[Voice] Handling offer from: $peerId');
     if (_peerConnections.containsKey(peerId)) {
       await _closePeerConnection(peerId);
     }
@@ -320,6 +354,7 @@ class VoiceChatService {
       final description = RTCSessionDescription(sdp, 'offer');
       await pc.setRemoteDescription(description);
       _remoteDescriptionPeers.add(peerId);
+      debugPrint('[Voice] Remote description set for: $peerId');
 
       // Process any ice candidates received before the offer description was set
       if (_pendingIceCandidates.containsKey(peerId)) {
@@ -338,24 +373,34 @@ class VoiceChatService {
         'targetId': peerId,
         'sdp': answer.sdp,
       });
-      debugPrint('[VoiceChat] Sent VOICE_ANSWER to peer: $peerId');
+      debugPrint('[Voice] Sent VOICE_ANSWER to: $peerId');
     } catch (e) {
-      debugPrint('[VoiceChat] Error handling offer from peer $peerId: $e');
+      debugPrint('[Voice] Error handling offer from $peerId: $e');
     }
   }
 
   Future<void> _handleAnswer(String peerId, String sdp) async {
-    debugPrint('[VoiceChat] Handling answer from peer: $peerId');
+    debugPrint('[Voice] Handling answer from: $peerId');
     final pc = _peerConnections[peerId];
-    if (pc == null) return;
+    if (pc == null) {
+      debugPrint('[Voice] No peer connection found for: $peerId');
+      return;
+    }
 
     try {
       final description = RTCSessionDescription(sdp, 'answer');
       await pc.setRemoteDescription(description);
-      _remoteDescriptionPeers.add(peerId);
-      debugPrint('[VoiceChat] Remote description set for peer: $peerId');
+      if (!_remoteDescriptionPeers.contains(peerId)) {
+        _remoteDescriptionPeers.add(peerId);
+      }
+      debugPrint('[Voice] Peer connected: $peerId - success');
     } catch (e) {
-      debugPrint('[VoiceChat] Error setting remote description for peer $peerId: $e');
+      // Handle race condition where answer arrives but connection already has remote description
+      debugPrint('[Voice] Error setting remote description for $peerId: $e');
+      // Still add to remoteDescriptionPeers to allow ICE candidates
+      if (!_remoteDescriptionPeers.contains(peerId)) {
+        _remoteDescriptionPeers.add(peerId);
+      }
     }
   }
 
@@ -363,10 +408,10 @@ class VoiceChatService {
     final pc = _peerConnections[peerId];
     if (pc != null && _remoteDescriptionPeers.contains(peerId)) {
       await pc.addCandidate(candidate);
-      debugPrint('[VoiceChat] Added ICE candidate directly for peer: $peerId');
+      debugPrint('[Voice] Added ICE candidate for: $peerId');
     } else {
       _pendingIceCandidates.putIfAbsent(peerId, () => []).add(candidate);
-      debugPrint('[VoiceChat] Stored pending ICE candidate for peer: $peerId');
+      debugPrint('[Voice] Stored pending ICE candidate for: $peerId');
     }
   }
 
@@ -535,11 +580,13 @@ class VoiceChatService {
   }
 
   Future<RTCPeerConnection> _createPeerConnection(String peerId) async {
+    debugPrint('[Voice] Creating peer connection for: $peerId');
     final pc = await createPeerConnection(_rtcConfig, _sdpConstraints);
 
     // Add local stream tracks to peer connection
     if (_localStream != null) {
       _localStream!.getTracks().forEach((track) {
+        debugPrint('[Voice] Adding local track: ${track.id}, kind: ${track.kind}');
         pc.addTrack(track, _localStream!);
       });
     }
@@ -548,9 +595,7 @@ class VoiceChatService {
       final candidateType = candidate.candidate?.contains(' typ relay') == true
           ? 'relay (TURN)'
           : 'direct';
-      debugPrint(
-        '[VoiceChat] Local ICE candidate gathered for peer: $peerId [$candidateType]',
-      );
+      debugPrint('[Voice] ICE candidate generated for $peerId: $candidateType');
       _wsClient?.sendVoiceSignal('VOICE_ICE_CANDIDATE', {
         'teamId': _currentTeamId,
         'userId': _myUserId,
@@ -564,14 +609,14 @@ class VoiceChatService {
     };
 
     pc.onTrack = (event) {
-      debugPrint('[VoiceChat] Remote track received from peer: $peerId');
+      debugPrint('[Voice] Remote track received from: $peerId, streams: ${event.streams.length}');
       if (event.streams.isNotEmpty) {
         _onRemoteStreamAdded(peerId, event.streams[0]);
       }
     };
 
     pc.onConnectionState = (state) {
-      debugPrint('[VoiceChat] Peer connection state change: $peerId -> $state');
+      debugPrint('[Voice] Peer connection state: $peerId -> $state');
       if (state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
           state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
@@ -585,10 +630,14 @@ class VoiceChatService {
   }
 
   void _onRemoteStreamAdded(String peerId, MediaStream stream) {
-    debugPrint('[VoiceChat] Remote audio stream active from peer: $peerId');
-    // flutter_webrtc will automatically play audio-only tracks when received.
-    // However, to configure audio route or sound levels, we can interact with stream here if needed.
+    debugPrint('[Voice] Remote stream added: $peerId, streamId: ${stream.id}');
+
+    // Store the remote stream - this is crucial for audio playback
+    _remoteStreams[peerId] = stream;
+
+    // Enable audio tracks
     stream.getAudioTracks().forEach((track) {
+      debugPrint('[Voice] Remote audio track: ${track.id}, enabled: ${track.enabled}');
       track.enabled = true;
     });
   }
@@ -597,8 +646,17 @@ class VoiceChatService {
     final pc = _peerConnections.remove(peerId);
     if (pc != null) {
       await pc.close();
-      debugPrint('[VoiceChat] Closed peer connection for: $peerId');
+      debugPrint('[Voice] Closed peer connection: $peerId');
     }
+
+    // Clean up remote stream for this peer
+    final remoteStream = _remoteStreams.remove(peerId);
+    if (remoteStream != null) {
+      remoteStream.getTracks().forEach((track) => track.stop());
+      await remoteStream.dispose();
+      debugPrint('[Voice] Disposed remote stream: $peerId');
+    }
+
     _pendingIceCandidates.remove(peerId);
     _remoteDescriptionPeers.remove(peerId);
     _activeSpeakers.remove(peerId);
@@ -606,10 +664,12 @@ class VoiceChatService {
   }
 
   void dispose() {
+    debugPrint('[Voice] Disposing voice chat service');
     _wsSubscription?.cancel();
     leaveVoiceRoom();
     _isInCallController.close();
     _isMutedController.close();
     _activeSpeakersController.close();
+    debugPrint('[Voice] Service disposed');
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:dio/dio.dart';
 import '../../../core/events/event_bus.dart';
 import '../../../core/websocket/websocket_client.dart';
 import '../models/team_model.dart';
@@ -54,7 +55,7 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
 
   void _listenWebSocket() {
     _wsSub = AppEventBus.instance.teamEventStream.listen((event) {
-      debugPrint('[TeamBloc] WebSocket event received: type=${event.type}, data=${event.data}');
+      debugPrint('[TeamBloc] WebSocket event: type=${event.type}, data=${event.data}');
       switch (event.type) {
         case WsEventType.teamMemberJoined:
           add(ev.TeamMemberJoinedEvent(
@@ -67,9 +68,13 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
           final leftUserId = event.data['leftUserId']?.toString() ??
               event.data['kickedUserId']?.toString() ??
               event.data['userId']?.toString() ?? '';
+          final isKick = event.data['isKick'] == true;
+          final remainingMembers = (event.data['remainingMembers'] as List?)?.cast<String>();
           add(ev.TeamMemberLeftEvent(
             teamId: event.data['teamId']?.toString() ?? '',
             userId: leftUserId,
+            isKick: isKick,
+            remainingMembers: remainingMembers,
           ));
           break;
         case WsEventType.teamMemberReady:
@@ -133,6 +138,18 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
         _wsClient.subscribeRoom(team.id, 'team');
       }
       emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, clearTeam: team == null));
+      if (team == null) {
+        AppEventBus.instance.triggerExploreTeamReload();
+      }
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        debugPrint('[TeamBloc] No team found (possibly kicked)');
+        emit(state.copyWith(status: TeamStatus.loaded, currentTeam: null, clearTeam: true));
+        AppEventBus.instance.triggerExploreTeamReload();
+      } else {
+        debugPrint('[TeamBloc] _onLoadRequested ERROR: $e');
+        emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể tải nhóm: $e'));
+      }
     } catch (e) {
       debugPrint('[TeamBloc] _onLoadRequested ERROR: $e');
       emit(state.copyWith(status: TeamStatus.error, errorMessage: 'Không thể tải nhóm: $e'));
@@ -155,7 +172,6 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
       _wsClient.subscribeRoom(team.id, 'team');
       emit(state.copyWith(status: TeamStatus.loaded, currentTeam: team, successMessage: 'Đã tạo nhóm!'));
       AppEventBus.instance.triggerProfileReload();
-      debugPrint('[TeamBloc] Triggering explore team reload');
       AppEventBus.instance.triggerExploreTeamReload();
     } catch (e) {
       debugPrint('[TeamBloc] _onCreateRequested ERROR: $e');
@@ -349,6 +365,12 @@ class TeamBloc extends Bloc<ev.TeamEvent, TeamState> {
   void _onMemberLeft(ev.TeamMemberLeftEvent event, Emitter<TeamState> emit) {
     if (state.currentTeam == null) return;
     if (event.teamId != state.currentTeam!.id) return;
+
+    if (event.isKick) {
+      debugPrint('[TeamBloc] Kick event detected, will reload team');
+      add(const ev.TeamLoadRequested());
+      return;
+    }
 
     final updatedMembers = state.currentTeam!.members
         .where((m) => m.userId != event.userId)

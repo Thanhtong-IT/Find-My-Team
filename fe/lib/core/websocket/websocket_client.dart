@@ -117,14 +117,19 @@ class WebSocketClient {
     _wsUrl = url;
     _token = token;
     _reconnectAttempts = 0;
+    debugPrint('[WS] Bắt đầu kết nối: $url');
     _doConnect();
   }
 
   void _doConnect() {
-    if (_wsUrl == null || _token == null || _token!.isEmpty) return;
+    if (_wsUrl == null || _token == null || _token!.isEmpty) {
+      debugPrint('[WS] Không thể kết nối - URL hoặc token null');
+      return;
+    }
 
     _reconnectTimer?.cancel();
     _setStatus(WsConnectionStatus.connecting);
+    debugPrint('[WS] Đang kết nối...');
 
     try {
       final uri = Uri.parse('${_wsUrl!}?token=$_token');
@@ -136,6 +141,7 @@ class WebSocketClient {
         onDone: _onDone,
       );
     } catch (e) {
+      debugPrint('[WS] Lỗi kết nối: $e');
       _scheduleReconnect();
     }
   }
@@ -145,6 +151,7 @@ class WebSocketClient {
       _setStatus(WsConnectionStatus.connected);
       _startHeartbeat();
       _resubscribeRooms();
+      debugPrint('[WS] Kết nối thành công');
     }
 
     try {
@@ -191,13 +198,14 @@ class WebSocketClient {
         final event = WsIncomingEvent(type: type, data: eventData, eventId: eventId);
         debugPrint('[WS] Emitting event: $event');
         _eventController.add(event);
+        debugPrint('[WS] Event: $op');
       }
 
       if (eventId != null) {
         _lastEventId = eventId;
       }
-    } catch (_) {
-      // Malformed message — ignore
+    } catch (e) {
+      debugPrint('[WS] Lỗi parse message: $e');
     }
   }
 
@@ -257,10 +265,12 @@ class WebSocketClient {
   }
 
   void _onError(Object error) {
+    debugPrint('[WS] Lỗi: $error');
     _setDisconnected();
   }
 
   void _onDone() {
+    debugPrint('[WS] Connection closed by server');
     _setDisconnected();
     _scheduleReconnect();
   }
@@ -308,6 +318,9 @@ class WebSocketClient {
   void _send(Map<String, dynamic> payload) {
     if (_channel != null && isConnected) {
       _channel!.sink.add(jsonEncode(payload));
+      debugPrint('[WS] Sent: ${payload['op']}');
+    } else {
+      debugPrint('[WS] Send failed - Not connected');
     }
   }
 
@@ -339,6 +352,7 @@ class WebSocketClient {
         'op': 'resume',
         'data': {'lastEventId': _lastEventId},
       });
+      debugPrint('[WS] Resume với lastEventId: $_lastEventId');
     }
   }
 
@@ -357,6 +371,7 @@ class WebSocketClient {
         'roomType': roomType,
       },
     });
+    debugPrint('[WS] Subscribe room: $roomType/$roomId');
   }
 
   /// Unsubscribe khỏi một room.
@@ -370,10 +385,12 @@ class WebSocketClient {
         'roomType': roomType,
       },
     });
+    debugPrint('[WS] Unsubscribe room: $roomType/$roomId');
   }
 
   /// Resubscribe all rooms after reconnect.
   void _resubscribeRooms() {
+    debugPrint('[WS] Resubscribing ${_subscribedRooms.length} rooms...');
     for (final key in _subscribedRooms.toList()) {
       final parts = key.split('_');
       if (parts.length == 2) {
