@@ -25,11 +25,13 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
   bool _isSending = false;
   String? _currentUserId;
   final Set<String> _sentInvitations = {};
+  final Set<String> _memberIds = {};
 
   @override
   void initState() {
     super.initState();
     _loadCurrentUser();
+    _memberIds.addAll(widget.team.members.map((m) => m.userId));
   }
 
   Future<void> _loadCurrentUser() async {
@@ -256,6 +258,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
       itemBuilder: (context, index) {
         final user = _filteredResults[index];
         final isSent = _sentInvitations.contains(user.id);
+        final isMember = _memberIds.contains(user.id);
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -263,6 +266,7 @@ class _InviteMemberScreenState extends State<InviteMemberScreen> {
             user: user,
             isSmallScreen: isSmallScreen,
             isSent: isSent,
+            isMember: isMember,
             isSending: _isSending && !isSent,
             onInvite: () => _sendInvitation(user),
           ),
@@ -277,12 +281,14 @@ class _UserSearchCard extends StatelessWidget {
   final bool isSmallScreen;
   final bool isSent;
   final bool isSending;
+  final bool isMember;
   final VoidCallback onInvite;
 
   const _UserSearchCard({
     required this.user,
     required this.isSmallScreen,
     required this.isSent,
+    required this.isMember,
     required this.isSending,
     required this.onInvite,
   });
@@ -362,7 +368,26 @@ class _UserSearchCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          if (isSent)
+          if (isMember)
+            Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 12 : 14,
+                vertical: isSmallScreen ? 8 : 10,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.textSecondary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                'Đã là thành viên',
+                style: TextStyle(
+                  fontSize: isSmallScreen ? 11 : 12,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          else if (isSent)
             Container(
               padding: EdgeInsets.symmetric(
                 horizontal: isSmallScreen ? 12 : 14,

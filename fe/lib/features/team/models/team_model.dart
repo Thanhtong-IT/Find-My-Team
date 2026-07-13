@@ -10,6 +10,7 @@ class TeamModel {
   final String ownerName;
   final bool isRecruiting;
   final List<TeamMemberModel> members;
+  final int? currentMemberCount;
   final DateTime createdAt;
 
   const TeamModel({
@@ -24,6 +25,7 @@ class TeamModel {
     required this.ownerName,
     this.isRecruiting = false,
     this.members = const [],
+    this.currentMemberCount,
     required this.createdAt,
   });
 
@@ -34,12 +36,12 @@ class TeamModel {
             ?.map((e) => TeamMemberModel.fromJson(e as Map<String, dynamic>))
             .toList() ??
         [];
-    
+
     // Find owner from members if not explicitly provided
     String resolvedOwnerName = json['ownerName'] as String? ?? '';
     if (resolvedOwnerName.isEmpty && membersList.isNotEmpty) {
       final owner = membersList.firstWhere(
-        (m) => m.isLeader, 
+        (m) => m.isLeader,
         orElse: () => membersList.first,
       );
       resolvedOwnerName = owner.displayName;
@@ -57,6 +59,7 @@ class TeamModel {
       ownerName: resolvedOwnerName,
       isRecruiting: statusStr == 'recruiting' || json['isRecruiting'] == true,
       members: membersList,
+      currentMemberCount: (json['currentMemberCount'] as num?)?.toInt(),
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
           : DateTime.now(),

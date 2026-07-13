@@ -77,7 +77,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _listenTeamEvents() {
     _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
-      debugPrint('[ExploreScreen] Received teamCreated event from WebSocket');
+      debugPrint('[ExploreScreen] Received team event: ${event.type} from WebSocket');
       if (!mounted) return;
       _loadTeams();
     });
@@ -398,7 +398,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                                 ),
                                               );
                                             },
-                                            onInvite: () {},
                                           ),
                                         ))
                                     .toList(),
@@ -699,7 +698,7 @@ class _TeamOpenCard extends StatelessWidget {
             children: [
               _InfoChip(label: team.requiredRank ?? 'Không yêu cầu', icon: Icons.emoji_events_outlined, isSmallScreen: isSmallScreen),
               const SizedBox(width: 8),
-              _InfoChip(label: '${team.members.length}/${team.maxMembers}', icon: Icons.people_outline, isSmallScreen: isSmallScreen),
+              _InfoChip(label: '${team.currentMemberCount ?? team.members.length}/${team.maxMembers}', icon: Icons.people_outline, isSmallScreen: isSmallScreen),
               const SizedBox(width: 8),
               _InfoChip(label: timeStr, icon: Icons.access_time_rounded, isSmallScreen: isSmallScreen),
             ],
@@ -795,13 +794,11 @@ class _OnlinePlayerCardFromApi extends StatelessWidget {
   final OnlinePlayerModel player;
   final bool isSmallScreen;
   final VoidCallback onProfile;
-  final VoidCallback onInvite;
 
   const _OnlinePlayerCardFromApi({
     required this.player,
     required this.isSmallScreen,
     required this.onProfile,
-    required this.onInvite,
   });
 
   @override
@@ -894,37 +891,18 @@ class _OnlinePlayerCardFromApi extends StatelessWidget {
               ],
             ),
           ),
-          Column(
-            children: [
-              SizedBox(
-                height: isSmallScreen ? 30 : 34,
-                child: OutlinedButton(
-                  onPressed: onProfile,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
-                  ),
-                  child: Text('Hồ sơ', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
-                ),
+          SizedBox(
+            height: isSmallScreen ? 30 : 34,
+            child: OutlinedButton(
+              onPressed: onProfile,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
               ),
-              SizedBox(height: isSmallScreen ? 6 : 8),
-              SizedBox(
-                height: isSmallScreen ? 30 : 34,
-                child: ElevatedButton(
-                  onPressed: onInvite,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12),
-                  ),
-                  child: Text('Mời chơi', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
-                ),
-              ),
-            ],
+              child: Text('Hồ sơ', style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w600)),
+            ),
           ),
         ],
       ),

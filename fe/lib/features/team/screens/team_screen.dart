@@ -190,6 +190,23 @@ class _TeamScreenState extends State<TeamScreen> {
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
             ),
             actions: [
+              if (_selectedTabIndex == 1 && hasTeam && isLeader)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: SizedBox(
+                    height: 36,
+                    child: TextButton(
+                      onPressed: () => _navigateToInviteMember(state.currentTeam!),
+                      style: TextButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: AppColors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Mời người', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                    ),
+                  ),
+                ),
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -346,6 +363,7 @@ class _TeamScreenState extends State<TeamScreen> {
                                     onKickMember: (memberId) {
                                       context.read<TeamBloc>().add(TeamMemberKickRequested(memberId));
                                     },
+                                    onInviteMember: () => _navigateToInviteMember(state.currentTeam!),
                                   ),
                                   _CommunityTab(communities: _communities, isSmallScreen: isSmallScreen),
                                 ],
@@ -367,20 +385,7 @@ class _TeamScreenState extends State<TeamScreen> {
   Widget? _buildFab(bool hasTeam, bool isLeader, TeamModel? currentTeam, bool showChatPanel) {
     if (showChatPanel) return null;
     if (_selectedTabIndex == 0) return null;
-    if (_selectedTabIndex == 1 && !hasTeam) return null;
-    if (_selectedTabIndex == 1 && hasTeam) {
-      // Chỉ cho phép mời người chơi nếu mình là leader
-      if (!isLeader) return null;
-      return FloatingActionButton.extended(
-        heroTag: 'team_invite_member_fab',
-        onPressed: () => _navigateToInviteMember(currentTeam!),
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.white,
-        elevation: 4,
-        icon: const Icon(Icons.person_add_rounded),
-        label: const Text('Mời người', style: TextStyle(fontWeight: FontWeight.bold)),
-      );
-    }
+    if (_selectedTabIndex == 1) return null;
     if (_selectedTabIndex == 2) {
       return FloatingActionButton.extended(
         heroTag: 'team_create_community_fab',
@@ -650,6 +655,7 @@ class _TeamTab extends StatelessWidget {
   final VoidCallback onMicToggled;
   final void Function(String userId) onViewProfile;
   final void Function(String memberId) onKickMember;
+  final VoidCallback onInviteMember;
 
   const _TeamTab({
     required this.hasTeam,
@@ -664,6 +670,7 @@ class _TeamTab extends StatelessWidget {
     required this.onMicToggled,
     required this.onViewProfile,
     required this.onKickMember,
+    required this.onInviteMember,
   });
 
   @override
@@ -703,11 +710,14 @@ class _TeamTab extends StatelessWidget {
             children: [
               const SizedBox(height: 8),
               _WaitingRoomHeader(
+                teamName: currentTeam.name,
                 members: members,
                 teamSize: teamSize,
                 createdGame: currentTeam.gameName,
                 createdRank: currentTeam.requiredRank,
                 isSmallScreen: isSmallScreen,
+                isLeader: isLeader,
+                onInviteMember: onInviteMember,
               ),
               const SizedBox(height: 16),
               Text('Danh sách thành viên', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
@@ -827,13 +837,25 @@ class _TeamTab extends StatelessWidget {
 }
 
 class _WaitingRoomHeader extends StatelessWidget {
+  final String teamName;
   final List<TeamMemberModel> members;
   final int teamSize;
   final String? createdGame;
   final String? createdRank;
   final bool isSmallScreen;
+  final bool isLeader;
+  final VoidCallback onInviteMember;
 
-  const _WaitingRoomHeader({required this.members, required this.teamSize, this.createdGame, this.createdRank, required this.isSmallScreen});
+  const _WaitingRoomHeader({
+    required this.teamName,
+    required this.members,
+    required this.teamSize,
+    this.createdGame,
+    this.createdRank,
+    required this.isSmallScreen,
+    required this.isLeader,
+    required this.onInviteMember,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -863,7 +885,7 @@ class _WaitingRoomHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Phòng chờ nhóm', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                    Text(teamName, style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     Text('${createdGame ?? "Chưa chọn game"} \u2022 Yêu cầu: ${createdRank ?? "Không yêu cầu"}', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textSecondary)),
                   ],
                 ),
@@ -895,13 +917,17 @@ class _WaitingRoomHeader extends StatelessWidget {
               color: AppColors.surface,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Row(
+            child: Column(
               children: [
-                _StatItem(label: 'Tổng thành viên', value: '${members.length}/$teamSize', icon: Icons.people_rounded, isSmallScreen: isSmallScreen),
-                const SizedBox(width: 16),
-                _StatItem(label: 'Slot trống', value: '${teamSize - members.length}', icon: Icons.add_circle_outline, isSmallScreen: isSmallScreen),
-                const SizedBox(width: 16),
-                _StatItem(label: 'Sẵn sàng', value: '${members.where((m) => m.isReady).length}', icon: Icons.check_circle_outline, isSmallScreen: isSmallScreen),
+                Row(
+                  children: [
+                    _StatItem(label: 'Tổng thành viên', value: '${members.length}/$teamSize', icon: Icons.people_rounded, isSmallScreen: isSmallScreen),
+                    const SizedBox(width: 16),
+                    _StatItem(label: 'Slot trống', value: '${teamSize - members.length}', icon: Icons.add_circle_outline, isSmallScreen: isSmallScreen),
+                    const SizedBox(width: 16),
+                    _StatItem(label: 'Sẵn sàng', value: '${members.where((m) => m.isReady).length}', icon: Icons.check_circle_outline, isSmallScreen: isSmallScreen),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1005,9 +1031,7 @@ class _MemberRow extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        member.displayName == 'Unknown' && member.userId == myUserId && myUserName.isNotEmpty
-                            ? myUserName
-                            : member.displayName,
+                        '${member.displayName == 'Unknown' && member.userId == myUserId && myUserName.isNotEmpty ? myUserName : member.displayName}${member.userId == myUserId ? ' (bạn)' : ''}',
                         style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
                       if (isLeader) ...[

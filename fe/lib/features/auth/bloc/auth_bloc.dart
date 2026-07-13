@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../core/repository/secure_storage_repository.dart';
 import '../../../core/websocket/websocket_client.dart';
 import '../../../core/events/event_bus.dart';
@@ -122,7 +123,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   Future<void> _connectWebSocket() async {
     final token = await _secureStorage.getAccessToken();
     if (token == null || token.isEmpty) return;
-    final wsUrl = dotenv.env['WS_URL'] ?? 'wss://findmyteam.q2k.click/ws';
+    final wsUrl = dotenv.env['WS_URL'] ?? ApiConstants.defaultWsUrl;
     _wsClient.connect(
       url: wsUrl,
       token: token,

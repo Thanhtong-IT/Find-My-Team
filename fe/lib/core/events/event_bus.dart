@@ -82,7 +82,9 @@ class AppEventBus {
 
   Stream<WsIncomingEvent> get exploreTeamStream => stream.where((e) =>
       e.type == WsEventType.teamCreated ||
-      e.type == WsEventType.teamDisbanded);
+      e.type == WsEventType.teamDisbanded ||
+      e.type == WsEventType.teamMemberJoined ||
+      e.type == WsEventType.teamMemberLeft);
 
   Stream<WsIncomingEvent> get typingStream => stream.where((e) =>
       e.type == WsEventType.typingStart || e.type == WsEventType.typingStop);

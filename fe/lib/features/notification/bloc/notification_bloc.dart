@@ -162,7 +162,21 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     try {
       await _apiService.acceptInvitation(event.invitationId);
 
-      final updated = state.notifications.where((n) => n.id != event.notificationId).toList();
+      final updated = state.notifications.map((n) {
+        if (n.id == event.notificationId) {
+          return NotificationItemModel(
+            id: n.id,
+            type: 'request_accepted',
+            title: 'Bạn đã chấp nhận lời mời',
+            body: 'Bạn đã tham gia nhóm.',
+            timestamp: n.timestamp,
+            isRead: true,
+            actionId: n.actionId,
+          );
+        }
+        return n;
+      }).toList();
+
       emit(state.copyWith(
         actionStatus: ActionStatus.success,
         actionMessage: 'Đã chấp nhận lời mời!',
@@ -202,7 +216,21 @@ class NotificationBloc extends Bloc<NotificationEvent, NotificationState> {
     try {
       await _apiService.rejectInvitation(event.invitationId);
 
-      final updated = state.notifications.where((n) => n.id != event.notificationId).toList();
+      final updated = state.notifications.map((n) {
+        if (n.id == event.notificationId) {
+          return NotificationItemModel(
+            id: n.id,
+            type: 'request_rejected',
+            title: 'Bạn đã từ chối lời mời',
+            body: 'Bạn đã từ chối lời mời tham gia nhóm.',
+            timestamp: n.timestamp,
+            isRead: true,
+            actionId: n.actionId,
+          );
+        }
+        return n;
+      }).toList();
+
       emit(state.copyWith(
         actionStatus: ActionStatus.success,
         actionMessage: 'Đã từ chối lời mời',

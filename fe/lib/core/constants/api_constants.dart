@@ -3,6 +3,7 @@ class ApiConstants {
 
   // Giá trị mặc định - sẽ được ghi đè bởi .env khi chạy app
   static const String defaultBaseUrl = 'https://findmyteam.q2k.click/api';
+  static const String defaultWsUrl = 'wss://findmyteam.q2k.click/ws';
 
   static const Duration connectTimeout = Duration(seconds: 30);
   static const Duration receiveTimeout = Duration(seconds: 30);
