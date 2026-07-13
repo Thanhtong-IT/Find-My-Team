@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:dio/dio.dart';
@@ -40,6 +41,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   final ExploreApiService _exploreService = ExploreApiService();
   StreamSubscription? _exploreTeamSub;
+  StreamSubscription? _exploreTeamReloadSub;
   Timer? _searchDebounce;
 
   List<String> get _gameFilters {
@@ -77,10 +79,23 @@ class _ExploreScreenState extends State<ExploreScreen> {
 
   void _listenTeamEvents() {
     _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
+<<<<<<< HEAD
       debugPrint('[ExploreScreen] Received team event: ${event.type} from WebSocket');
+=======
+      debugPrint('[Explore] Received team event: ${event.type}');
+>>>>>>> fa3734ed81be1099a022d9a2d1bf5730e7e989bb
       if (!mounted) return;
       _loadTeams();
     });
+
+    // Listen for explore team reload triggers (e.g., after kick/leave)
+    _exploreTeamReloadSub = AppEventBus.instance.exploreTeamReloadStream.listen((_) {
+      debugPrint('[Explore] Received explore team reload trigger');
+      if (!mounted) return;
+      _loadTeams();
+    });
+
+    debugPrint('[Explore] Listening to team events');
   }
 
   Future<void> _loadInitialData() async {
@@ -88,6 +103,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _isLoadingGames = true;
     });
+    debugPrint('[Explore] Loading initial data...');
     try {
       final games = await UserApiService().getPopularGames();
       if (!mounted) return;
@@ -95,11 +111,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _games = games;
         _isLoadingGames = false;
       });
+      debugPrint('[Explore] Games loaded: ${games.length}');
       await Future.wait([
         _loadTeams(),
         _loadOnlinePlayers(),
       ]);
     } catch (e, stack) {
+      debugPrint('[Explore] Error loading initial data: $e');
       debugPrint('Error loading initial data: $e\n$stack');
       if (!mounted) return;
       setState(() {
@@ -118,8 +136,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
           _onlinePlayers = players;
           _isLoadingPlayers = false;
         });
+        debugPrint('[Explore] Players loaded: ${players.length}');
       }
     } catch (e) {
+      debugPrint('[Explore] Error loading players: $e');
       debugPrint('Error loading online players: $e');
       if (mounted) {
         setState(() {
@@ -135,6 +155,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     setState(() {
       _isLoadingTeams = true;
     });
+    debugPrint('[Explore] Loading teams...');
     try {
       List<TeamModel> loadedTeams;
       if (_selectedGameModel == null) {
@@ -147,7 +168,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
         _teams = loadedTeams;
         _isLoadingTeams = false;
       });
+        debugPrint('[Explore] Teams loaded: ${loadedTeams.length}');
     } catch (e, stack) {
+      debugPrint('[Explore] Error loading teams: $e');
       debugPrint('Error loading teams: $e\n$stack');
       if (!mounted) return;
       setState(() {
@@ -173,6 +196,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       return;
     }
 
+    debugPrint('[Explore] Searching for: $value');
     _searchDebounce = Timer(const Duration(milliseconds: 500), () {
       _performSearch(value);
     });
@@ -187,13 +211,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
     });
 
     try {
+      debugPrint('[Explore] Performing search: $query');
       final results = await _exploreService.searchUsers(query);
       if (!mounted) return;
       setState(() {
         _searchResults = results;
         _isSearching = false;
       });
+      debugPrint('[Explore] Search results: ${results.length}');
     } catch (e) {
+      debugPrint('[Explore] Search failed: $e');
       if (!mounted) return;
       setState(() {
         _searchResults = [];
@@ -214,6 +241,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _joinTeam(String teamId) async {
+    debugPrint('[Explore] Joining team: $teamId');
     final messageController = TextEditingController();
     showDialog(
       context: context,
@@ -240,17 +268,31 @@ class _ExploreScreenState extends State<ExploreScreen> {
             onPressed: () async {
               Navigator.pop(context);
               try {
+                debugPrint('[Explore] Sending join request to: $teamId');
                 await TeamApiService().sendJoinRequest(teamId, message: messageController.text.trim());
+                debugPrint('[Explore] Join request sent to: $teamId');
                 _showSnackBar('Đã gửi yêu cầu tham gia đội!');
               } catch (e) {
                 String errorMsg = 'Gửi yêu cầu thất bại';
+                bool shouldReloadTeam = false;
                 if (e is DioException) {
                   final respData = e.response?.data;
                   if (respData is Map && respData['message'] != null) {
                     errorMsg = respData['message'].toString();
+                    // Nếu đã là thành viên, reload team
+                    if (errorMsg.contains('thành viên')) {
+                      shouldReloadTeam = true;
+                    }
                   }
                 }
+                debugPrint('[Explore] Join request failed: $errorMsg');
                 _showSnackBar(errorMsg, isError: true);
+
+                // Reload team và profile nếu user đã là thành viên
+                if (shouldReloadTeam) {
+                  AppEventBus.instance.triggerTeamReload();
+                  AppEventBus.instance.triggerProfileReload();
+                }
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: AppColors.white),
@@ -265,6 +307,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   void dispose() {
     _searchController.dispose();
     _exploreTeamSub?.cancel();
+    _exploreTeamReloadSub?.cancel();
     _searchDebounce?.cancel();
     super.dispose();
   }

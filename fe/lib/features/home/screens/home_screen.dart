@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _gamesError;
   String? _teamsError;
   StreamSubscription? _exploreTeamSub;
+  StreamSubscription? _teamReloadSub;
 
   @override
   void initState() {
@@ -37,11 +38,19 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       _loadTeams();
     });
+
+    // Listen for team reload triggers (e.g., after kick/leave)
+    _teamReloadSub = AppEventBus.instance.teamReloadStream.listen((_) {
+      debugPrint('[HomeScreen] Received teamReload event');
+      if (!mounted) return;
+      _loadTeams();
+    });
   }
 
   @override
   void dispose() {
     _exploreTeamSub?.cancel();
+    _teamReloadSub?.cancel();
     super.dispose();
   }
 

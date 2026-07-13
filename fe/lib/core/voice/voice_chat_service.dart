@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
@@ -116,7 +116,7 @@ class VoiceChatService {
       _syncMembersFromTokenResponse(voiceToken, myUserId);
       await _ensureEngine(appId);
 
-      debugPrint('[VoiceChat] Joining Agora: appId=$appId channel=$channelName uid=$agoraUid tokenLength=${token.length}');
+      debugPrint('[VoiceChat] Joining Agora: appId=$appId channel=$channelName uid=$agoraUid');
       await _engine!.joinChannel(
         token: token,
         channelId: channelName,
@@ -222,52 +222,35 @@ class VoiceChatService {
           debugPrint('[VoiceChat] Agora join success: channel=${connection.channelId} uid=$uid');
         },
         onUserJoined: (connection, uid, elapsed) {
-          final userId = _agoraUidToUserId[uid];
-          debugPrint('[VoiceChat] Remote user joined Agora channel: uid=$uid userId=$userId elapsed=$elapsed');
+          final uidStr = _agoraUidToUserId[uid];
+          debugPrint('[VoiceChat] Remote user joined: uid=$uid uidStr=$uidStr elapsed=$elapsed');
         },
         onUserOffline: (connection, remoteUid, reason) {
-          final userId = _agoraUidToUserId[remoteUid];
-          debugPrint('[VoiceChat] Remote user offline: uid=$remoteUid userId=$userId reason=$reason');
-          if (userId == null) return;
-          final nextSpeakers = Set<String>.from(_activeSpeakers)..remove(userId);
-          _publishActiveSpeakers(nextSpeakers);
+          final uidStr = _agoraUidToUserId[remoteUid];
+          debugPrint('[VoiceChat] Remote user offline: uid=$remoteUid uidStr=$uidStr reason=$reason');
+          if (uidStr == null) return;
+          final next = Set<String>.from(_activeSpeakers)..remove(uidStr);
+          _publishActiveSpeakers(next);
         },
         onLocalAudioStateChanged: (connection, state, reason) {
-          debugPrint('[VoiceChat] Local audio state: channel=${connection.channelId} state=$state reason=$reason muted=$_isMuted');
+          debugPrint('[VoiceChat] Local audio state: state=$state reason=$reason muted=$_isMuted');
         },
         onRemoteAudioStateChanged: (connection, remoteUid, state, reason, elapsed) {
-          final userId = _agoraUidToUserId[remoteUid];
-          debugPrint('[VoiceChat] Remote audio state: channel=${connection.channelId} uid=$remoteUid userId=$userId state=$state reason=$reason elapsed=$elapsed');
-        },
-        onAudioPublishStateChanged: (channel, oldState, newState, elapsed) {
-          debugPrint('[VoiceChat] Audio publish state: channel=$channel old=$oldState new=$newState elapsed=$elapsed muted=$_isMuted');
-        },
-        onAudioSubscribeStateChanged: (channel, uid, oldState, newState, elapsed) {
-          final userId = _agoraUidToUserId[uid];
-          debugPrint('[VoiceChat] Audio subscribe state: channel=$channel uid=$uid userId=$userId old=$oldState new=$newState elapsed=$elapsed');
+          debugPrint('[VoiceChat] Remote audio state: uid=$remoteUid state=$state reason=$reason elapsed=$elapsed');
         },
         onUserMuteAudio: (connection, remoteUid, muted) {
-          final userId = _agoraUidToUserId[remoteUid];
-          debugPrint('[VoiceChat] Remote user mute changed: uid=$remoteUid userId=$userId muted=$muted');
-        },
-        onRemoteAudioStats: (connection, stats) {
-          debugPrint('[VoiceChat] Remote audio stats: channel=${connection.channelId} stats=${stats.toJson()}');
-        },
-        onAudioRoutingChanged: (routing) {
-          debugPrint('[VoiceChat] Audio routing changed: routing=$routing');
-        },
-        onPermissionError: (permissionType) {
-          debugPrint('[VoiceChat] Agora permission error: type=$permissionType');
+          final uidStr = _agoraUidToUserId[remoteUid];
+          debugPrint('[VoiceChat] Remote user mute: uid=$remoteUid uidStr=$uidStr muted=$muted');
         },
         onAudioVolumeIndication: (connection, speakers, speakerNumber, totalVolume) {
-          final nextSpeakers = <String>{};
+          final next = <String>{};
           for (final speaker in speakers) {
             final volume = speaker.volume ?? 0;
             final vad = speaker.vad ?? 0;
 
             if (speaker.uid == 0) {
               if (_myUserId != null && !_isMuted && (vad == 1 || volume > _speakerVolumeThreshold)) {
-                nextSpeakers.add(_myUserId!);
+                next.add(_myUserId!);
               }
               continue;
             }
@@ -276,12 +259,12 @@ class VoiceChatService {
               continue;
             }
 
-            final userId = _agoraUidToUserId[speaker.uid];
-            if (userId != null) {
-              nextSpeakers.add(userId);
+            final uidStr = _agoraUidToUserId[speaker.uid];
+            if (uidStr != null) {
+              next.add(uidStr);
             }
           }
-          _publishActiveSpeakers(nextSpeakers);
+          _publishActiveSpeakers(next);
         },
         onTokenPrivilegeWillExpire: (connection, token) {
           _renewAgoraToken();
@@ -290,10 +273,10 @@ class VoiceChatService {
           _renewAgoraToken();
         },
         onConnectionStateChanged: (connection, state, reason) {
-          debugPrint('[VoiceChat] Agora connection state: state=$state reason=$reason');
+          debugPrint('[VoiceChat] Connection state: state=$state reason=$reason');
         },
         onLeaveChannel: (connection, stats) {
-          debugPrint('[VoiceChat] Left Agora channel: channel=${connection.channelId} stats=${stats.toJson()}');
+          debugPrint('[VoiceChat] Left channel');
         },
       ),
     );

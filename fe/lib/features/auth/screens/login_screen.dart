@@ -42,6 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _showSnackBar('Vui lòng nhập mật khẩu');
       return;
     }
+// TODO: Implement login logic
 
     context.read<AuthBloc>().add(AuthLoginRequested(
       email: email,
