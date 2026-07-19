@@ -11,6 +11,7 @@ import '../widgets/profile_header.dart';
 import '../widgets/profile_stat_card.dart';
 import '../../notification/screens/notification_screen.dart';
 import '../../auth/screens/login_screen.dart';
+import '../../profile/screens/friend_requests_screen.dart';
 import '../bloc/profile_bloc.dart';
 import '../bloc/profile_event.dart';
 import '../bloc/profile_state.dart';
@@ -318,6 +319,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
             subtitle: 'Cài đặt thông báo',
             isSmallScreen: isSmallScreen,
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const NotificationScreen())),
+          ),
+          _divider(isSmallScreen),
+          _buildSettingsItem(
+            context,
+            icon: Icons.people_rounded,
+            title: 'Danh sách bạn bè',
+            subtitle: 'Xem tất cả bạn bè của bạn',
+            isSmallScreen: isSmallScreen,
+            onTap: () {
+              Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false).then((_) {});
+              Navigator.pushReplacementNamed(context, '/main', arguments: 3);
+            },
+          ),
+          _divider(isSmallScreen),
+          _buildSettingsItem(
+            context,
+            icon: Icons.person_add_rounded,
+            title: 'Lời mời kết bạn',
+            subtitle: 'Xem và phản hồi lời mời',
+            isSmallScreen: isSmallScreen,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const FriendRequestsScreen())),
           ),
           _divider(isSmallScreen),
           _buildSettingsItem(

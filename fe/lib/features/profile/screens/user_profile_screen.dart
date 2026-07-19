@@ -3,6 +3,7 @@ import '../../../core/constants/constants.dart';
 import '../../../core/repository/secure_storage_repository.dart';
 import '../models/profile_model.dart';
 import '../services/user_api_service.dart';
+import '../../team/services/friendship_api_service.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/profile_stat_card.dart';
 
@@ -63,10 +64,113 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     }
   }
 
-  void _onFriendTap() {
+  Future<void> _onFriendTap() async {
+    final api = FriendshipApiService();
+    try {
+      final friendship = await api.getFriendshipWith(widget.userId);
+      if (!mounted) return;
+
+      if (friendship == null) {
+        _showSnackBar('Không thể kiểm tra trạng thái kết bạn', isError: true);
+        return;
+      }
+
+      final friendshipId = friendship.id;
+      if (friendshipId == null) {
+        _showSnackBar('Không thể xác định lời mời kết bạn', isError: true);
+        return;
+      }
+
+      if (friendship.isPending && friendship.isSent) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.white,
+            surfaceTintColor: AppColors.white,
+            title: const Text('Hủy lời mời', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            content: const Text('Bạn có muốn hủy lời mời kết bạn này không?', style: TextStyle(color: AppColors.textSecondary)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Để sau')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary), child: const Text('Hủy lời mời')),
+            ],
+          ),
+        );
+        if (confirm == true) {
+          await api.cancelFriendRequest(friendshipId);
+          if (!mounted) return;
+          _showSnackBar('Đã hủy lời mời kết bạn');
+          _loadProfile();
+        }
+        return;
+      }
+
+      if (friendship.isPending && friendship.isReceived) {
+        final choice = await showDialog<String>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.white,
+            surfaceTintColor: AppColors.white,
+            title: const Text('Lời mời kết bạn', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            content: Text('${friendship.friendDisplayName ?? friendship.friendUsername} muốn kết bạn với bạn', style: const TextStyle(color: AppColors.textSecondary)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, 'reject'), child: const Text('Từ chối', style: TextStyle(color: AppColors.error))),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, 'accept'), style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary), child: const Text('Đồng ý')),
+            ],
+          ),
+        );
+
+        if (choice == 'accept') {
+          await api.acceptFriendRequest(friendshipId);
+          if (!mounted) return;
+          _showSnackBar('Đã chấp nhận lời mời kết bạn');
+          _loadProfile();
+          return;
+        }
+
+        if (choice == 'reject') {
+          await api.rejectFriendRequest(friendshipId);
+          if (!mounted) return;
+          _showSnackBar('Đã từ chối lời mời kết bạn');
+          _loadProfile();
+          return;
+        }
+        return;
+      }
+
+      if (friendship.isAccepted) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: AppColors.white,
+            surfaceTintColor: AppColors.white,
+            title: const Text('Hủy kết bạn', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+            content: Text('Bạn có muốn hủy kết bạn với ${friendship.friendDisplayName ?? friendship.friendUsername} không?', style: const TextStyle(color: AppColors.textSecondary)),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Để sau')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: AppColors.error), child: const Text('Hủy kết bạn')),
+            ],
+          ),
+        );
+        if (confirm == true) {
+          await api.unfriend(friendshipId);
+          if (!mounted) return;
+          _showSnackBar('Đã hủy kết bạn');
+          _loadProfile();
+        }
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar('$e', isError: true);
+    }
+  }
+
+  void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Tính năng kết bạn sẽ được cập nhật'),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? AppColors.error : AppColors.primary,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }

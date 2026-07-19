@@ -4,6 +4,7 @@ import '../../home/screens/home_screen.dart';
 import '../../explore/screens/explore_screen.dart';
 import '../../team/screens/team_screen.dart';
 import '../../profile/screens/profile_screen.dart';
+import '../../profile/screens/friends_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key, this.initialIndex = 0});
@@ -33,6 +34,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     HomeScreen(),
     ExploreScreen(),
     TeamScreen(),
+    FriendsScreen(),
     ProfileScreen(),
   ];
 
@@ -56,7 +58,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                 _buildNavItem(index: 0, icon: Icons.home_rounded, label: 'Trang chủ'),
                 _buildNavItem(index: 1, icon: Icons.explore_rounded, label: 'Khám phá'),
                 _buildNavItem(index: 2, icon: Icons.groups_rounded, label: 'Nhóm'),
-                _buildNavItem(index: 3, icon: Icons.person_rounded, label: 'Hồ sơ'),
+                _buildNavItem(index: 3, icon: Icons.people_rounded, label: 'Bạn bè'),
+                _buildNavItem(index: 4, icon: Icons.person_rounded, label: 'Hồ sơ'),
               ],
             ),
           ),
@@ -68,7 +71,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   Widget _buildNavItem({required int index, required IconData icon, required String label}) {
     final isSelected = _currentIndex == index;
     return SizedBox(
-      width: MediaQuery.of(context).size.width / 4,
+      width: MediaQuery.of(context).size.width / 5,
       child: GestureDetector(
         onTap: () => setState(() => _currentIndex = index),
         behavior: HitTestBehavior.opaque,
