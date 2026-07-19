@@ -55,6 +55,9 @@ class AppEventBus {
   Stream<WsIncomingEvent> get messageStream =>
       stream.where((e) => e.type == WsEventType.messageCreated);
 
+  Stream<WsIncomingEvent> get privateMessageStream =>
+      stream.where((e) => e.type == WsEventType.privateMessageCreated);
+
   Stream<WsIncomingEvent> get teamEventStream => stream.where((e) =>
       e.type == WsEventType.teamMemberJoined ||
       e.type == WsEventType.teamMemberLeft ||

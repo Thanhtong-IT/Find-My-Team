@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/events/event_bus.dart';
+import '../../team/models/friendship_model.dart';
+import '../../team/services/friendship_api_service.dart';
 import '../bloc/notification_bloc.dart';
 import '../bloc/notification_event.dart';
 import '../bloc/notification_state.dart';
@@ -18,11 +20,60 @@ class NotificationScreen extends StatefulWidget {
 
 class _NotificationScreenState extends State<NotificationScreen> {
   int _selectedTabIndex = 0;
+  final _friendshipApi = FriendshipApiService();
+  List<FriendshipModel> _friendRequests = [];
+  bool _isLoadingFriendRequests = false;
 
   @override
   void initState() {
     super.initState();
+    _loadAll();
+  }
+
+  void _loadAll() {
     context.read<NotificationBloc>().add(const NotificationLoadRequested());
+    _loadFriendRequests();
+  }
+
+  Future<void> _loadFriendRequests() async {
+    if (!mounted) return;
+    setState(() => _isLoadingFriendRequests = true);
+    try {
+      final reqs = await _friendshipApi.getPendingRequests();
+      if (!mounted) return;
+      setState(() {
+        _friendRequests = reqs;
+        _isLoadingFriendRequests = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingFriendRequests = false);
+      }
+    }
+  }
+
+  Future<void> _acceptFriendRequest(FriendshipModel request) async {
+    try {
+      if (request.id == null) return;
+      await _friendshipApi.acceptFriendRequest(request.id!);
+      if (!mounted) return;
+      _showSnackBar('Đã chấp nhận lời mời kết bạn');
+      _loadAll();
+    } catch (e) {
+      if (mounted) _showSnackBar('Không thể chấp nhận lời mời', isError: true);
+    }
+  }
+
+  Future<void> _rejectFriendRequest(FriendshipModel request) async {
+    try {
+      if (request.id == null) return;
+      await _friendshipApi.rejectFriendRequest(request.id!);
+      if (!mounted) return;
+      _showSnackBar('Đã từ chối lời mời kết bạn');
+      _loadAll();
+    } catch (e) {
+      if (mounted) _showSnackBar('Không thể từ chối lời mời', isError: true);
+    }
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -37,27 +88,37 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   List<NotificationItemModel> _getFilteredNotifications(NotificationState state) {
     switch (_selectedTabIndex) {
-      case 0: return state.notifications;
-      case 1: return state.notifications.where((n) => n.type == 'join_request' || n.type == 'team_invite').toList();
-      case 2: return state.notifications.where((n) => n.type == 'community_post' || n.type == 'chat_message' || n.type == 'request_accepted' || n.type == 'request_rejected').toList();
-      default: return [];
+      case 0:
+        return state.notifications;
+      case 1:
+        return state.notifications.where((n) => n.type == 'join_request' || n.type == 'team_invite').toList();
+      case 2:
+        return state.notifications
+            .where((n) =>
+                n.type == 'community_post' ||
+                n.type == 'chat_message' ||
+                n.type == 'request_accepted' ||
+                n.type == 'request_rejected')
+            .toList();
+      default:
+        return [];
     }
   }
 
   void _onAccept(NotificationItemModel notif) {
     if (notif.type != 'team_invite' || notif.actionId == null) return;
     context.read<NotificationBloc>().add(NotificationAcceptInvitationRequested(
-      notificationId: notif.id,
-      invitationId: notif.actionId!,
-    ));
+          notificationId: notif.id,
+          invitationId: notif.actionId!,
+        ));
   }
 
   void _onReject(NotificationItemModel notif) {
     if (notif.type != 'team_invite' || notif.actionId == null) return;
     context.read<NotificationBloc>().add(NotificationRejectInvitationRequested(
-      notificationId: notif.id,
-      invitationId: notif.actionId!,
-    ));
+          notificationId: notif.id,
+          invitationId: notif.actionId!,
+        ));
   }
 
   @override
@@ -72,11 +133,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
         }
         if (state.actionStatus == ActionStatus.success && state.actionMessage != null) {
           _showSnackBar(state.actionMessage!);
-          // Trigger team reload and navigate to Team tab after accepting invitation
           if (state.actionMessage!.contains('chấp nhận')) {
             AppEventBus.instance.triggerTeamReload();
-            AppEventBus.instance.navigateToTab(1); // Switch to Team tab (index 1)
-            // Pop back to TeamScreen
+            AppEventBus.instance.navigateToTab(1);
             Navigator.pop(context);
           }
         }
@@ -85,12 +144,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
         }
       },
       builder: (context, state) {
-        final isActionLoading = state.actionStatus == ActionStatus.accepting || state.actionStatus == ActionStatus.rejecting;
+        final isActionLoading =
+            state.actionStatus == ActionStatus.accepting || state.actionStatus == ActionStatus.rejecting;
         return Scaffold(
           backgroundColor: AppColors.white,
           body: RefreshIndicator(
             onRefresh: () async {
-              context.read<NotificationBloc>().add(const NotificationLoadRequested());
+              _loadAll();
               await Future.delayed(const Duration(milliseconds: 500));
             },
             color: AppColors.primary,
@@ -155,41 +215,54 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Widget _buildTabs(bool isSmallScreen) {
     final tabs = ['Tất cả', 'Yêu cầu', 'Thông tin'];
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Row(
-        children: List.generate(tabs.length, (index) {
-          final isSelected = index == _selectedTabIndex;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _selectedTabIndex = index),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                margin: EdgeInsets.only(right: index < tabs.length - 1 ? 8 : 0),
-                padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : AppColors.surface,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  tabs[index],
-                  style: TextStyle(
-                    fontSize: isSmallScreen ? 12 : 13,
-                    fontWeight: FontWeight.w600,
-                    color: isSelected ? AppColors.white : AppColors.textSecondary,
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          child: Row(
+            children: List.generate(tabs.length, (index) {
+              final isSelected = index == _selectedTabIndex;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() => _selectedTabIndex = index);
+                    if (index == 1) {
+                      _loadFriendRequests();
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    margin: EdgeInsets.only(right: index < tabs.length - 1 ? 8 : 0),
+                    padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 10 : 12),
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.primary : AppColors.surface,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      tabs[index],
+                      style: TextStyle(
+                        fontSize: isSmallScreen ? 12 : 13,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected ? AppColors.white : AppColors.textSecondary,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          );
-        }),
-      ),
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildNotificationList(bool isSmallScreen, NotificationState state, bool isActionLoading) {
-    if (state.status == NotificationStatus.loading) {
+    // Sửa logic check Loading tách biệt rõ ràng
+    if (_selectedTabIndex == 1 && _isLoadingFriendRequests) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_selectedTabIndex != 1 && state.status == NotificationStatus.loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -206,7 +279,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             ),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () => context.read<NotificationBloc>().add(const NotificationLoadRequested()),
+              onPressed: _loadAll,
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
               child: const Text('Thử lại'),
             ),
@@ -216,8 +289,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
 
     final notifications = _getFilteredNotifications(state);
+    final showFriendRequests = _selectedTabIndex == 1;
 
-    if (notifications.isEmpty) {
+    // Sửa logic Check Rỗng chuẩn xác
+    final isTabRequestsEmpty = showFriendRequests && _friendRequests.isEmpty && notifications.isEmpty;
+    final isOtherTabEmpty = !showFriendRequests && notifications.isEmpty;
+
+    if (isTabRequestsEmpty || isOtherTabEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -231,7 +309,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             const SizedBox(height: 8),
             Text(
               _selectedTabIndex == 1
-                  ? 'Các yêu cầu tham gia sẽ xuất hiện ở đây'
+                  ? 'Các yêu cầu kết bạn và tham gia sẽ xuất hiện ở đây'
                   : 'Bạn sẽ nhận thông báo khi có hoạt động mới',
               style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary),
               textAlign: TextAlign.center,
@@ -243,9 +321,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
     return ListView.builder(
       padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20, vertical: isSmallScreen ? 8 : 12),
-      itemCount: notifications.length,
+      itemCount: notifications.length + (showFriendRequests ? _friendRequests.length : 0),
       itemBuilder: (context, index) {
-        final notif = notifications[index];
+        if (showFriendRequests && index < _friendRequests.length) {
+          final request = _friendRequests[index];
+          return _buildFriendRequestTile(request, isSmallScreen);
+        }
+
+        final notificationIndex = showFriendRequests ? index - _friendRequests.length : index;
+        final notif = notifications[notificationIndex];
         final showActions = notif.type == 'team_invite';
         return NotificationCard(
           notification: notif,
@@ -260,6 +344,78 @@ class _NotificationScreenState extends State<NotificationScreen> {
           isLoading: isActionLoading,
         );
       },
+    );
+  }
+
+  Widget _buildFriendRequestTile(FriendshipModel request, bool isSmallScreen) {
+    // Sửa lỗi gọi sai tên biến mapping JSON: displayName -> friendDisplayName
+    final displayName = request.friendDisplayName ?? request.friendUsername ?? 'Người dùng';
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 16),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [
+          BoxShadow(color: AppColors.divider.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 3))
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: isSmallScreen ? 22 : 26,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+            backgroundImage: request.friendAvatarUrl != null && request.friendAvatarUrl!.isNotEmpty
+                ? NetworkImage(request.friendAvatarUrl!)
+                : null,
+            child: request.friendAvatarUrl == null || request.friendAvatarUrl!.isEmpty
+                ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 14 : 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'Muốn kết bạn với bạn',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                onPressed: () => _rejectFriendRequest(request),
+                icon: Icon(Icons.close_rounded, color: AppColors.error, size: isSmallScreen ? 20 : 22),
+                style: IconButton.styleFrom(backgroundColor: AppColors.error.withValues(alpha: 0.08)),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: () => _acceptFriendRequest(request),
+                icon: Icon(Icons.check_rounded, color: AppColors.success, size: isSmallScreen ? 20 : 22),
+                style: IconButton.styleFrom(backgroundColor: AppColors.success.withValues(alpha: 0.08)),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

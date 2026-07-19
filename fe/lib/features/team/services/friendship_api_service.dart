@@ -70,10 +70,17 @@ class FriendshipApiService {
       if (json == null || json['success'] != true) {
         return [];
       }
-      final list = json['data'] as List<dynamic>?;
+      
+      // Bóc tách đúng lớp vỏ bọc phân trang (data -> content)
+      final dataMap = json['data'] as Map<String, dynamic>?;
+      if (dataMap == null) return [];
+      
+      final list = dataMap['content'] as List<dynamic>?;
       if (list == null) return [];
+      
       return list.map((e) => FriendshipModel.fromJson(e as Map<String, dynamic>)).toList();
     } catch (e) {
+      print('Lỗi tại getFriends: $e');
       return [];
     }
   }
@@ -85,10 +92,17 @@ class FriendshipApiService {
       if (json == null || json['success'] != true) {
         return [];
       }
-      final list = json['data'] as List<dynamic>?;
+      
+      // Bóc tách đúng lớp vỏ bọc phân trang (data -> content)
+      final dataMap = json['data'] as Map<String, dynamic>?;
+      if (dataMap == null) return [];
+      
+      final list = dataMap['content'] as List<dynamic>?;
       if (list == null) return [];
+      
       return list.map((e) => FriendshipModel.fromJson(e as Map<String, dynamic>)).toList();
     } catch (e) {
+      print('Lỗi tại getPendingRequests: $e');
       return [];
     }
   }

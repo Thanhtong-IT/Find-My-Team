@@ -22,16 +22,16 @@ class FriendshipModel {
   factory FriendshipModel.fromJson(Map<String, dynamic> json) {
     final rawId = json['id']?.toString() ?? json['friendshipId']?.toString();
     final createdAtRaw = json['createdAt'] as String? ?? json['created_at'] as String?;
+    
+    // Bóc tách linh hoạt cho cả 2 cấu trúc API (/requests và /friends)
+    final uName = json['friendUsername'] as String? ?? json['username'] as String? ?? json['friend_name'] as String? ?? '';
+    final dName = json['friendDisplayName'] as String? ?? json['displayName'] as String? ?? json['friend_display_name'] as String?;
+
     return FriendshipModel(
       id: rawId?.isEmpty == true ? null : rawId,
-      friendId: json['friendId']?.toString() ?? json['user_id']?.toString() ?? '',
-      friendUsername: json['friendUsername'] as String? ??
-          json['username'] as String? ??
-          json['friend_name'] as String? ??
-          '',
-      friendDisplayName: json['friendDisplayName'] as String? ??
-          json['displayName'] as String? ??
-          json['friend_display_name'] as String?,
+      friendId: json['friendId']?.toString() ?? json['userId']?.toString() ?? json['user_id']?.toString() ?? '',
+      friendUsername: uName,
+      friendDisplayName: dName ?? uName, // Nếu không có displayName, lấy tạm username làm tên hiển thị
       friendAvatarUrl: json['friendAvatarUrl'] as String? ??
           json['avatarUrl'] as String? ??
           json['friend_avatar_url'] as String?,

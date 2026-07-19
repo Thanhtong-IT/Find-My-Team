@@ -14,6 +14,7 @@ enum WsEventType {
   // Messaging
   messageCreated,
   teamMessageCreated,
+  privateMessageCreated,
   // Team
   teamCreated,
   teamMemberJoined,
@@ -245,6 +246,8 @@ class WebSocketClient {
         return WsEventType.messageCreated;
       case 'TEAM_MESSAGE_CREATED':
         return WsEventType.teamMessageCreated;
+      case 'PRIVATE_MESSAGE_CREATED':
+        return WsEventType.privateMessageCreated;
       case 'TEAM_CREATED':
         return WsEventType.teamCreated;
       case 'TEAM_MEMBER_JOINED':
@@ -348,6 +351,14 @@ class WebSocketClient {
     } else {
       debugPrint('[WS] Send failed - Not connected');
     }
+  }
+
+  /// Gửi payload tùy chỉnh qua WebSocket
+  void sendPayload(String op, Map<String, dynamic> data) {
+    _send({
+      'op': op,
+      'data': data,
+    });
   }
 
   void sendTypingStart(String conversationId) {

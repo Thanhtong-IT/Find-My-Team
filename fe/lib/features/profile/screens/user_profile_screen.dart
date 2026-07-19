@@ -3,6 +3,7 @@ import '../../../core/constants/constants.dart';
 import '../../../core/repository/secure_storage_repository.dart';
 import '../models/profile_model.dart';
 import '../services/user_api_service.dart';
+import '../../team/models/friendship_model.dart';
 import '../../team/services/friendship_api_service.dart';
 import '../widgets/profile_header.dart';
 import '../widgets/profile_stat_card.dart';
@@ -20,6 +21,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   final _apiService = UserApiService();
   final _storage = SecureStorageRepository();
   UserProfileModel? _profile;
+  FriendshipModel? _friendship;
   bool _isLoading = true;
   String? _error;
   String? _currentUserId;
@@ -49,10 +51,15 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     });
 
     try {
-      final profile = await _apiService.getUserProfile(widget.userId);
+      final results = await Future.wait([
+        _apiService.getUserProfile(widget.userId),
+        FriendshipApiService().getFriendshipWith(widget.userId),
+      ]);
+
       if (!mounted) return;
       setState(() {
-        _profile = profile;
+        _profile = results[0] as UserProfileModel?;
+        _friendship = results[1] as FriendshipModel?;
         _isLoading = false;
       });
     } catch (e) {
@@ -67,21 +74,22 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Future<void> _onFriendTap() async {
     final api = FriendshipApiService();
     try {
-      final friendship = await api.getFriendshipWith(widget.userId);
-      if (!mounted) return;
-
-      if (friendship == null) {
-        _showSnackBar('Không thể kiểm tra trạng thái kết bạn', isError: true);
+      // Nếu chưa có quan hệ hoặc status là NONE, gửi lời mời mới (POST)
+      if (_friendship == null || _friendship!.status.toUpperCase() == 'NONE') {
+        await api.sendFriendRequest(widget.userId);
+        if (!mounted) return;
+        _showSnackBar('Đã gửi lời mời kết bạn');
+        _loadProfile();
         return;
       }
 
-      final friendshipId = friendship.id;
+      final friendshipId = _friendship!.id;
       if (friendshipId == null) {
         _showSnackBar('Không thể xác định lời mời kết bạn', isError: true);
         return;
       }
 
-      if (friendship.isPending && friendship.isSent) {
+      if (_friendship!.isPending && _friendship!.isSent) {
         final confirm = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -104,17 +112,17 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         return;
       }
 
-      if (friendship.isPending && friendship.isReceived) {
+      if (_friendship!.isPending && _friendship!.isReceived) {
         final choice = await showDialog<String>(
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: AppColors.white,
             surfaceTintColor: AppColors.white,
             title: const Text('Lời mời kết bạn', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-            content: Text('${friendship.friendDisplayName ?? friendship.friendUsername} muốn kết bạn với bạn', style: const TextStyle(color: AppColors.textSecondary)),
+            content: Text('${_friendship!.friendDisplayName ?? _friendship!.friendUsername} muốn kết bạn với bạn', style: const TextStyle(color: AppColors.textSecondary)),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, 'reject'), child: const Text('Từ chối', style: TextStyle(color: AppColors.error))),
-              ElevatedButton(onPressed: () => Navigator.pop(ctx, 'accept'), style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary), child: const Text('Đồng ý')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, 'accept'), style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary), child: const Text('Chấp nhận')),
             ],
           ),
         );
@@ -137,14 +145,14 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
         return;
       }
 
-      if (friendship.isAccepted) {
+      if (_friendship!.isAccepted) {
         final confirm = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             backgroundColor: AppColors.white,
             surfaceTintColor: AppColors.white,
             title: const Text('Hủy kết bạn', style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-            content: Text('Bạn có muốn hủy kết bạn với ${friendship.friendDisplayName ?? friendship.friendUsername} không?', style: const TextStyle(color: AppColors.textSecondary)),
+            content: Text('Bạn có muốn hủy kết bạn với ${_friendship!.friendDisplayName ?? _friendship!.friendUsername} không?', style: const TextStyle(color: AppColors.textSecondary)),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Để sau')),
               ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: AppColors.error), child: const Text('Hủy kết bạn')),
@@ -286,6 +294,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             isSmallScreen: isSmallScreen,
             onEditTap: _isOwnProfile ? () {} : null,
             onFriendTap: !_isOwnProfile ? _onFriendTap : null,
+            friendship: _friendship,
           ),
           Padding(
             padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
+import '../../team/models/friendship_model.dart';
 import '../models/profile_model.dart';
 
 class ProfileHeader extends StatelessWidget {
@@ -7,6 +8,7 @@ class ProfileHeader extends StatelessWidget {
   final bool isSmallScreen;
   final VoidCallback? onEditTap;
   final VoidCallback? onFriendTap;
+  final FriendshipModel? friendship;
 
   const ProfileHeader({
     super.key,
@@ -14,6 +16,7 @@ class ProfileHeader extends StatelessWidget {
     required this.isSmallScreen,
     this.onEditTap,
     this.onFriendTap,
+    this.friendship,
   });
 
   @override
@@ -126,18 +129,44 @@ class ProfileHeader extends StatelessWidget {
   Widget _buildActionButton() {
     if (onFriendTap != null) {
       // Show Friend button for other users' profiles
+      String label = 'Kết bạn';
+      IconData icon = Icons.person_add_rounded;
+      Color bgColor = AppColors.white;
+      Color fgColor = AppColors.primary;
+
+      if (friendship != null) {
+        if (friendship!.isAccepted) {
+          label = 'Bạn bè';
+          icon = Icons.check_circle_rounded;
+          bgColor = AppColors.success.withValues(alpha: 0.2);
+          fgColor = AppColors.success;
+        } else if (friendship!.isPending) {
+          if (friendship!.isSent) {
+            label = 'Đã gửi lời mời';
+            icon = Icons.hourglass_empty_rounded;
+            bgColor = AppColors.primary.withValues(alpha: 0.2);
+            fgColor = AppColors.primary;
+          } else {
+            label = 'Chấp nhận';
+            icon = Icons.how_to_reg;
+            bgColor = AppColors.primary;
+            fgColor = AppColors.white;
+          }
+        }
+      }
+
       return SizedBox(
         height: isSmallScreen ? 38 : 42,
         child: ElevatedButton.icon(
           onPressed: onFriendTap,
-          icon: Icon(Icons.person_add_rounded, size: isSmallScreen ? 16 : 18),
+          icon: Icon(icon, size: isSmallScreen ? 16 : 18),
           label: Text(
-            'Kết bạn',
+            label,
             style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.white,
-            foregroundColor: AppColors.primary,
+            backgroundColor: bgColor,
+            foregroundColor: fgColor,
             elevation: 0,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
