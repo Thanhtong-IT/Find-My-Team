@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
 import '../../team/services/friendship_api_service.dart';
 import '../../team/models/friendship_model.dart';
+import '../../chat/screens/private_chat_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -219,7 +220,15 @@ class _FriendTile extends StatelessWidget {
           ),
           TextButton.icon(
             onPressed: () {
-              // Optional: navigate to chat or profile
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => PrivateChatScreen(
+                    friendId: friend.friendId,
+                    friendName: friend.displayName,
+                    friendAvatar: friend.friendAvatarUrl,
+                  ),
+                ),
+              );
             },
             icon: Icon(Icons.chat_bubble_outline_rounded, size: isSmallScreen ? 16 : 18),
             label: Text(

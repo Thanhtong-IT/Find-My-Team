@@ -6,6 +6,7 @@ import '../repository/secure_storage_repository.dart';
 import '../websocket/websocket_client.dart';
 import '../events/event_bus.dart';
 import '../voice/voice_chat_service.dart';
+import '../../features/chat/services/private_chat_websocket_service.dart';
 
 final getIt = GetIt.instance;
 
@@ -13,6 +14,7 @@ Future<void> setupDependencies() async {
   getIt.registerLazySingleton<FlutterSecureStorage>(
     () => const FlutterSecureStorage(),
   );
+
 
   // Core
   getIt.registerLazySingleton<SecureStorageRepository>(
@@ -26,11 +28,15 @@ Future<void> setupDependencies() async {
   // DioClient — gọi init 1 lần
   DioClient.init();
 
+
   // WebSocket
   getIt.registerLazySingleton<WebSocketClient>(() => WebSocketClient.instance);
 
   // Event Bus
   getIt.registerLazySingleton<AppEventBus>(() => AppEventBus.instance);
+
+  // Private Chat WebSocket
+  getIt.registerLazySingleton<PrivateChatWebSocketService>(() => PrivateChatWebSocketService());
 
   // Voice Chat
   getIt.registerLazySingleton<VoiceChatService>(() {

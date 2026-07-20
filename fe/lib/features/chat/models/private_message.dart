@@ -39,17 +39,23 @@ class PrivateMessage {
 
   PrivateMessage copyWith({
     String? id,
+    String? clientMessageId,
+    String? senderId,
+    String? receiverId,
+    String? content,
+    DateTime? timestamp,
     PrivateMessageStatus? status,
+    bool? isMe,
   }) {
     return PrivateMessage(
       id: id ?? this.id,
-      clientMessageId: clientMessageId,
-      senderId: senderId,
-      receiverId: receiverId,
-      content: content,
-      timestamp: timestamp,
+      clientMessageId: clientMessageId ?? this.clientMessageId,
+      senderId: senderId ?? this.senderId,
+      receiverId: receiverId ?? this.receiverId,
+      content: content ?? this.content,
+      timestamp: timestamp ?? this.timestamp,
       status: status ?? this.status,
-      isMe: isMe,
+      isMe: isMe ?? this.isMe,
     );
   }
 }

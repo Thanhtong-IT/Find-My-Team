@@ -39,26 +39,37 @@ class PrivateChatBloc extends Bloc<PrivateChatEvent, PrivateChatState> {
   }
 
   Future<void> _onHistoryLoadRequested(
-    PrivateChatHistoryLoadRequested event,
-    Emitter<PrivateChatState> emit,
-  ) async {
-    if (event.isRefresh) {
-      emit(state.copyWith(status: PrivateChatStatus.loading, messages: []));
-    }
+      PrivateChatHistoryLoadRequested event,
+      Emitter<PrivateChatState> emit,
+      ) async {
+    // TỐI ƯU 1: Chống gọi trùng lặp nhiều lần khi đang load dở trang cũ
+    if (state.status == PrivateChatStatus.loading && !event.isRefresh) return;
+    if (state.hasReachedMax && !event.isRefresh) return;
+
+    final targetPage = event.isRefresh ? 0 : state.currentPage + 1;
+
+    emit(state.copyWith(
+      status: PrivateChatStatus.loading,
+      messages: event.isRefresh ? [] : state.messages,
+    ));
 
     try {
       final messages = await _apiService.getChatHistory(
         friendId: _friendId,
-        page: event.isRefresh ? 0 : state.currentPage + 1,
+        page: targetPage,
         currentUserId: _currentUserId,
       );
 
       final isLastPage = messages.length < 20;
 
+      // TỐI ƯU 2: Lọc bỏ những tin nhắn đã vô tình được thêm qua luồng realtime trước đó để tránh trùng lặp UI
+      final existingIds = state.messages.map((m) => m.id).toSet();
+      final filteredNewMessages = messages.where((m) => !existingIds.contains(m.id)).toList();
+
       emit(state.copyWith(
         status: PrivateChatStatus.loaded,
-        messages: event.isRefresh ? messages : [...state.messages, ...messages],
-        currentPage: event.isRefresh ? 0 : state.currentPage + 1,
+        messages: event.isRefresh ? messages : [...state.messages, ...filteredNewMessages],
+        currentPage: targetPage,
         hasReachedMax: isLastPage,
       ));
     } catch (e) {
@@ -70,11 +81,13 @@ class PrivateChatBloc extends Bloc<PrivateChatEvent, PrivateChatState> {
   }
 
   Future<void> _onSendMessageRequested(
-    PrivateChatSendMessageRequested event,
-    Emitter<PrivateChatState> emit,
-  ) async {
+      PrivateChatSendMessageRequested event,
+      Emitter<PrivateChatState> emit,
+      ) async {
+    if (event.content.trim().isEmpty) return;
+
     final clientMsgId = DateTime.now().millisecondsSinceEpoch.toString();
-    
+
     // 1. Optimistic UI: Tạo tin nhắn tạm thời
     final tempMessage = PrivateMessage(
       clientMessageId: clientMsgId,
@@ -99,41 +112,39 @@ class PrivateChatBloc extends Bloc<PrivateChatEvent, PrivateChatState> {
         clientMessageId: clientMsgId,
       );
     } catch (e) {
-      // Nếu gửi WebSocket lỗi, đánh dấu failed
-      emit(state.copyWith(
-        messages: state.messages.map((m) {
-          return m.clientMessageId == clientMsgId 
-              ? m.copyWith(status: PrivateMessageStatus.failed) 
-              : m;
-        }).toList(),
-      ));
+      // Nếu gửi WebSocket lỗi đột xuất, đánh dấu failed lập tức
+      final failedMessages = state.messages.map((m) {
+        return m.clientMessageId == clientMsgId
+            ? m.copyWith(status: PrivateMessageStatus.failed)
+            : m;
+      }).toList();
+
+      emit(state.copyWith(messages: failedMessages));
     }
   }
 
   void _onRealtimeMessageReceived(
-    PrivateChatRealtimeMessageReceived event,
-    Emitter<PrivateChatState> emit,
-  ) {
+      PrivateChatRealtimeMessageReceived event,
+      Emitter<PrivateChatState> emit,
+      ) {
     final incoming = event.message;
-    
-    // Check if this is a confirmation of a message we sent
+
     final index = state.messages.indexWhere(
-      (m) => m.clientMessageId == incoming.clientMessageId,
+          (m) => m.clientMessageId == incoming.clientMessageId,
     );
 
     if (index != -1) {
       // Cập nhật tin nhắn đang ở trạng thái "sending" thành "sent"
-      final updatedMessages = state.messages.map((m) {
-        if (m.clientMessageId == incoming.clientMessageId) {
-          return incoming.copyWith(status: PrivateMessageStatus.sent);
-        }
-        return m;
-      }).toList();
-      
+      final updatedMessages = state.messages.map<PrivateMessage>((m) {
+  if (m.clientMessageId == incoming.clientMessageId) {
+    return incoming.copyWith(status: PrivateMessageStatus.sent, isMe: true);
+  }
+  return m;
+}).toList();
+
       emit(state.copyWith(messages: updatedMessages));
     } else {
-      // Tin nhắn mới từ bạn bè, chèn vào đầu danh sách
-      // Đảm bảo set isMe chính xác dựa trên currentUserId
+      // Tin nhắn mới từ đối phương hoặc thiết bị khác của chính mình gửi
       final messageWithMe = PrivateMessage(
         id: incoming.id,
         clientMessageId: incoming.clientMessageId,
@@ -144,7 +155,7 @@ class PrivateChatBloc extends Bloc<PrivateChatEvent, PrivateChatState> {
         status: PrivateMessageStatus.sent,
         isMe: incoming.senderId == _currentUserId,
       );
-      
+
       emit(state.copyWith(
         messages: [messageWithMe, ...state.messages],
       ));

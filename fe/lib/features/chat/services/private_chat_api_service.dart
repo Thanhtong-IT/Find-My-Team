@@ -25,16 +25,21 @@ class PrivateChatApiService {
         throw Exception(json?['message'] as String? ?? 'Không thể tải lịch sử chat');
       }
 
-      // BẮT BUỘC: Bóc tách qua hai lớp data -> content cho API phân trang
-      final dataMap = json['data'] as Map<String, dynamic>?;
-      if (dataMap == null) return [];
+      // Xử lý bóc tách linh hoạt: Hỗ trợ cả trường hợp data là List hoặc Map (phân trang)
+      final dynamic rawData = json['data'] ?? json;
       
-      final list = dataMap['content'] as List<dynamic>?;
-      if (list == null) return [];
+      if (rawData is Map<String, dynamic> && rawData.containsKey('content')) {
+        final list = rawData['content'] as List<dynamic>?;
+        return list
+            ?.map((e) => PrivateMessage.fromJson(e as Map<String, dynamic>, currentUserId: currentUserId))
+            .toList() ?? [];
+      } else if (rawData is List) {
+        return rawData
+            .map((e) => PrivateMessage.fromJson(e as Map<String, dynamic>, currentUserId: currentUserId))
+            .toList();
+      }
 
-      return list
-          .map((e) => PrivateMessage.fromJson(e as Map<String, dynamic>, currentUserId: currentUserId))
-          .toList();
+      return [];
     } catch (e) {
       print('Lỗi PrivateChatApiService.getChatHistory: $e');
       rethrow;
