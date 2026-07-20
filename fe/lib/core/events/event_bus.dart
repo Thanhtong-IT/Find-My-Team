@@ -87,7 +87,9 @@ class AppEventBus {
       e.type == WsEventType.teamCreated ||
       e.type == WsEventType.teamDisbanded ||
       e.type == WsEventType.teamMemberJoined ||
-      e.type == WsEventType.teamMemberLeft);
+      e.type == WsEventType.teamMemberLeft ||
+      e.type == WsEventType.userOnline ||
+      e.type == WsEventType.userOffline);
 
   Stream<WsIncomingEvent> get typingStream => stream.where((e) =>
       e.type == WsEventType.typingStart || e.type == WsEventType.typingStop);

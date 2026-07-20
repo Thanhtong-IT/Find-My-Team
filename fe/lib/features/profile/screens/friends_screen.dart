@@ -3,6 +3,7 @@ import '../../../core/constants/constants.dart';
 import '../../team/services/friendship_api_service.dart';
 import '../../team/models/friendship_model.dart';
 import '../../chat/screens/private_chat_screen.dart';
+import '../../notification/screens/notification_screen.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -78,13 +79,26 @@ class _FriendsScreenState extends State<FriendsScreen> {
           ],
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 20),
-            child: IconButton(
-              onPressed: _loadFriends,
-              icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
+          GestureDetector(
+            onTap: _loadFriends,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.refresh_rounded, color: AppColors.primary, size: 20),
             ),
           ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationScreen())),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.notifications_outlined, color: AppColors.primary, size: 20),
+            ),
+          ),
+          const SizedBox(width: 20),
         ],
         toolbarHeight: isSmallScreen ? 80 : 90,
       ),

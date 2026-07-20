@@ -53,9 +53,8 @@ class PrivateChatApiService {
     required String clientMessageId,
   }) async {
     final resp = await DioClient.post(
-      '${ApiConstants.friendships}/chat/send',
+      '${ApiConstants.friendships}/chat/$receiverId',
       data: {
-        'receiverId': receiverId,
         'content': content,
         'clientMessageId': clientMessageId,
       },
@@ -66,6 +65,7 @@ class PrivateChatApiService {
       throw Exception(json?['message'] as String? ?? 'Không thể gửi tin nhắn');
     }
 
-    return PrivateMessage.fromJson(json['data'] as Map<String, dynamic>);
+    // Backend trả về DirectMessageResponse trong trường 'data'
+    return PrivateMessage.fromJson(json['data'] as Map<String, dynamic>, currentUserId: null);
   }
 }

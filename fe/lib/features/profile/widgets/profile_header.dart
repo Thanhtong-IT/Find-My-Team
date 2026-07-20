@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
 import '../../team/models/friendship_model.dart';
+import '../../notification/screens/notification_screen.dart';
 import '../models/profile_model.dart';
 
 class ProfileHeader extends StatelessWidget {
@@ -34,7 +35,27 @@ class ProfileHeader extends StatelessWidget {
         bottom: false,
         child: Column(
           children: [
-            SizedBox(height: isSmallScreen ? 12 : 16),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationScreen())),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.notifications_outlined, color: Colors.white, size: 22),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: isSmallScreen ? 4 : 8),
             Stack(
               alignment: Alignment.center,
               children: [

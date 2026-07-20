@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:intl/intl.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/events/event_bus.dart';
+import '../../../core/websocket/websocket_client.dart';
 import 'game_selection_screen.dart';
 import '../../team/bloc/team_bloc.dart';
 import '../../team/bloc/team_state.dart';
@@ -14,6 +15,7 @@ import '../../team/models/team_model.dart';
 import '../../profile/models/game_model.dart';
 import '../../profile/services/user_api_service.dart';
 import '../../profile/screens/user_profile_screen.dart';
+import '../../notification/screens/notification_screen.dart';
 import '../services/explore_api_service.dart';
 
 class ExploreScreen extends StatefulWidget {
@@ -42,6 +44,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
   final ExploreApiService _exploreService = ExploreApiService();
   StreamSubscription? _exploreTeamSub;
   StreamSubscription? _exploreTeamReloadSub;
+  StreamSubscription? _presenceSub;
   Timer? _searchDebounce;
 
   List<String> get _gameFilters {
@@ -91,10 +94,22 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   void _listenTeamEvents() {
-    _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
-      debugPrint('[ExploreScreen] Received teamCreated event from WebSocket');
+    // Luồng lắng nghe riêng cho biến động người chơi online
+    _presenceSub = AppEventBus.instance.presenceStream.listen((event) {
+      debugPrint('[Explore] NHẬN SỰ KIỆN PRESENCE: ${event.type}');
       if (!mounted) return;
-      _loadTeams();
+      _loadOnlinePlayers(silent: true);
+    });
+
+    // Luồng lắng nghe riêng cho biến động tạo đội
+    _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
+      debugPrint('[ExploreScreen] Received update event: ${event.type}');
+      if (!mounted) return;
+      
+      // Nếu là sự kiện tạo đội, chỉ load lại danh sách đội
+      if (event.type == WsEventType.teamCreated || event.type == WsEventType.teamDisbanded) {
+        _loadTeams();
+      }
     });
 
     // Listen for explore team reload triggers (e.g., after kick/leave)
@@ -106,7 +121,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       },
     );
 
-    debugPrint('[Explore] Listening to team events');
+    debugPrint('[Explore] Listening to global events');
   }
 
   Future<void> _loadInitialData() async {
@@ -134,9 +149,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
     }
   }
 
-  Future<void> _loadOnlinePlayers() async {
+  Future<void> _loadOnlinePlayers({bool silent = false}) async {
     if (!mounted) return;
-    setState(() => _isLoadingPlayers = true);
+    if (!silent) setState(() => _isLoadingPlayers = true);
     try {
       final players = await _exploreService.getOnlinePlayers();
       if (mounted) {
@@ -148,7 +163,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
       }
     } catch (e) {
       debugPrint('[Explore] Error loading players: $e');
-      debugPrint('Error loading online players: $e');
       if (mounted) {
         setState(() {
           _onlinePlayers = [];
@@ -335,6 +349,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     _searchController.dispose();
     _exploreTeamSub?.cancel();
     _exploreTeamReloadSub?.cancel();
+    _presenceSub?.cancel();
     _searchDebounce?.cancel();
     super.dispose();
   }
@@ -374,7 +389,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 20),
+            padding: const EdgeInsets.only(right: 8),
             child: Container(
               width: 40,
               height: 40,
@@ -389,6 +404,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
             ),
           ),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationScreen())),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
+              child: const Icon(Icons.notifications_outlined, color: AppColors.primary, size: 20),
+            ),
+          ),
+          const SizedBox(width: 20),
         ],
         toolbarHeight: isSmallScreen ? 80 : 90,
       ),
@@ -539,23 +564,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
           },
         ),
       ),
-      floatingActionButton: _isSearchMode
-          ? null
-          : FloatingActionButton.extended(
-              heroTag: 'explore_create_request_fab',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const GameSelectionScreen()),
-              ),
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.white,
-              elevation: 4,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text(
-                'Tạo yêu cầu tìm đội',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
+      floatingActionButton: null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }

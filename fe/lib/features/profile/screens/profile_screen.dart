@@ -154,8 +154,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       SizedBox(height: isSmallScreen ? 12 : 16),
                       _buildCurrentTeam(profile, isSmallScreen, context),
                       SizedBox(height: isSmallScreen ? 12 : 16),
-                      _buildCommunitySection(profile, isSmallScreen),
-                      SizedBox(height: isSmallScreen ? 12 : 16),
                       _buildSettingsSection(isSmallScreen, context, userProfile, state.popularGames),
                       SizedBox(height: isSmallScreen ? 24 : 32),
                     ],
@@ -262,31 +260,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCommunitySection(ProfileModel profile, bool isSmallScreen) {
-    return _CardWrapper(
-      isSmallScreen: isSmallScreen,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Cộng đồng đã tham gia', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: isSmallScreen ? 96 : 106,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: profile.communities.length,
-              separatorBuilder: (ctx, idx) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final comm = profile.communities[index];
-                return _CommunityItem(comm: comm, isSmallScreen: isSmallScreen);
-              },
-            ),
           ),
         ],
       ),
@@ -470,75 +443,6 @@ class _CardWrapper extends StatelessWidget {
         boxShadow: [BoxShadow(color: AppColors.divider.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 3))],
       ),
       child: child,
-    );
-  }
-}
-
-class _CommunityItem extends StatelessWidget {
-  final CommunityInfoModel comm;
-  final bool isSmallScreen;
-
-  const _CommunityItem({required this.comm, required this.isSmallScreen});
-
-  @override
-  Widget build(BuildContext context) {
-    final itemWidth = isSmallScreen ? 70.0 : 78.0;
-    return SizedBox(
-      width: itemWidth,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            children: [
-              Container(
-                width: isSmallScreen ? 52 : 58,
-                height: isSmallScreen ? 52 : 58,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF7C3AED), Color(0xFF2563EB)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Center(
-                  child: Text(
-                    comm.name.isNotEmpty ? comm.name[0].toUpperCase() : '?',
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.white),
-                  ),
-                ),
-              ),
-              if (comm.isOnline)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: AppColors.success,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.white, width: 2),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            comm.name,
-            style: TextStyle(
-              fontSize: isSmallScreen ? 10 : 11,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textSecondary,
-              height: 1.2,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
     );
   }
 }

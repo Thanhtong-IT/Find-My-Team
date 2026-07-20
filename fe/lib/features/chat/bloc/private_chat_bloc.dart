@@ -104,15 +104,26 @@ class PrivateChatBloc extends Bloc<PrivateChatEvent, PrivateChatState> {
       messages: [tempMessage, ...state.messages],
     ));
 
-    // 3. Gửi qua WebSocket
+    // 3. Gửi qua REST API (Thay thế cho WebSocket gửi trực tiếp để lấy ACK tức thì)
     try {
-      _wsService.sendRealtimeMessage(
+      final sentMessage = await _apiService.sendMessage(
         receiverId: _friendId,
         content: event.content,
         clientMessageId: clientMsgId,
       );
+
+      // 4. Cập nhật trạng thái tin nhắn thành "sent" dựa trên phản hồi từ Server
+      final updatedMessages = state.messages.map((m) {
+        if (m.clientMessageId == clientMsgId) {
+          // Ghi đè bằng dữ liệu thật từ server (có ID chính thức)
+          return sentMessage.copyWith(status: PrivateMessageStatus.sent, isMe: true);
+        }
+        return m;
+      }).toList();
+
+      emit(state.copyWith(messages: updatedMessages));
     } catch (e) {
-      // Nếu gửi WebSocket lỗi đột xuất, đánh dấu failed lập tức
+      // Nếu lỗi, đánh dấu failed
       final failedMessages = state.messages.map((m) {
         return m.clientMessageId == clientMsgId
             ? m.copyWith(status: PrivateMessageStatus.failed)
@@ -129,29 +140,25 @@ class PrivateChatBloc extends Bloc<PrivateChatEvent, PrivateChatState> {
       ) {
     final incoming = event.message;
 
-    final index = state.messages.indexWhere(
-          (m) => m.clientMessageId == incoming.clientMessageId,
+    // 1. Kiểm tra xem tin nhắn này đã tồn tại trong danh sách chưa (theo ID server hoặc Client ID)
+    final isDuplicate = state.messages.any(
+          (m) => (m.id != null && m.id == incoming.id) || 
+                 (m.clientMessageId == incoming.clientMessageId && m.clientMessageId.isNotEmpty),
     );
 
-    if (index != -1) {
-      // Cập nhật tin nhắn đang ở trạng thái "sending" thành "sent"
+    if (isDuplicate) {
+      // Cập nhật lại tin nhắn nếu cần (ví dụ: chuyển từ sending sang sent)
       final updatedMessages = state.messages.map<PrivateMessage>((m) {
-  if (m.clientMessageId == incoming.clientMessageId) {
-    return incoming.copyWith(status: PrivateMessageStatus.sent, isMe: true);
-  }
-  return m;
-}).toList();
+        if (m.clientMessageId == incoming.clientMessageId || (m.id != null && m.id == incoming.id)) {
+          return incoming.copyWith(status: PrivateMessageStatus.sent, isMe: incoming.senderId == _currentUserId);
+        }
+        return m;
+      }).toList();
 
       emit(state.copyWith(messages: updatedMessages));
     } else {
-      // Tin nhắn mới từ đối phương hoặc thiết bị khác của chính mình gửi
-      final messageWithMe = PrivateMessage(
-        id: incoming.id,
-        clientMessageId: incoming.clientMessageId,
-        senderId: incoming.senderId,
-        receiverId: incoming.receiverId,
-        content: incoming.content,
-        timestamp: incoming.timestamp,
+      // 2. Tin nhắn mới hoàn toàn từ người khác gửi đến
+      final messageWithMe = incoming.copyWith(
         status: PrivateMessageStatus.sent,
         isMe: incoming.senderId == _currentUserId,
       );

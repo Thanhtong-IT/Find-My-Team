@@ -36,7 +36,6 @@ class _TeamScreenState extends State<TeamScreen> {
   int _selectedTabIndex = 1;
   StreamSubscription? _navigateSub;
   StreamSubscription? _wsSubscription;
-  List<CommunityModel> _communities = [];
   bool _isChatOpen = false;
   bool _hasUnreadMessage = false;
 
@@ -44,7 +43,6 @@ class _TeamScreenState extends State<TeamScreen> {
   void initState() {
     super.initState();
     context.read<TeamBloc>().add(const TeamLoadRequested());
-    _loadCommunities();
     _navigateSub = AppEventBus.instance.navigateToTabStream.listen((tabIndex) {
       if (mounted) {
         setState(() => _selectedTabIndex = tabIndex);
@@ -66,23 +64,6 @@ class _TeamScreenState extends State<TeamScreen> {
         }
       }
     });
-  }
-
-  Future<void> _loadCommunities() async {
-    try {
-      final communities = await CommunityRepository().getCommunities();
-      if (mounted) {
-        setState(() {
-          _communities = communities;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _communities = [];
-        });
-      }
-    }
   }
 
   @override
@@ -365,7 +346,6 @@ class _TeamScreenState extends State<TeamScreen> {
                                     },
                                     onInviteMember: () => _navigateToInviteMember(state.currentTeam!),
                                   ),
-                                  _CommunityTab(communities: _communities, isSmallScreen: isSmallScreen),
                                 ],
                               ),
                       ),
@@ -383,29 +363,6 @@ class _TeamScreenState extends State<TeamScreen> {
   }
 
   Widget? _buildFab(bool hasTeam, bool isLeader, TeamModel? currentTeam, bool showChatPanel) {
-    if (showChatPanel) return null;
-    if (_selectedTabIndex == 0) return null;
-    if (_selectedTabIndex == 1) return null;
-    if (_selectedTabIndex == 2) {
-      return FloatingActionButton.extended(
-        heroTag: 'team_create_community_fab',
-        onPressed: () async {
-          final result = await Navigator.push<bool>(
-            context,
-            MaterialPageRoute(builder: (_) => const CreateCommunityScreen()),
-          );
-          // Reload profile when returning from create community
-          if (result == true && mounted) {
-            context.read<ProfileBloc>().add(const ProfileLoadRequested());
-          }
-        },
-        backgroundColor: AppColors.primary,
-        foregroundColor: AppColors.white,
-        elevation: 4,
-        icon: const Icon(Icons.group_add_rounded),
-        label: const Text('Tạo cộng đồng', style: TextStyle(fontWeight: FontWeight.bold)),
-      );
-    }
     return null;
   }
 
@@ -426,7 +383,7 @@ class _TeamTopTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = ['Yêu cầu', 'Nhóm', 'Cộng đồng'];
+    final tabs = ['Yêu cầu', 'Nhóm'];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
@@ -1423,91 +1380,6 @@ class _CreateTeamFormState extends State<_CreateTeamForm> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _CommunityTab extends StatelessWidget {
-  final List<CommunityModel> communities;
-  final bool isSmallScreen;
-
-  const _CommunityTab({required this.communities, required this.isSmallScreen});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 8),
-          Text('Cộng đồng đã tham gia', style: TextStyle(fontSize: isSmallScreen ? 15 : 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-          const SizedBox(height: 12),
-          ...communities.map((comm) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _CommunityCard(community: comm, isSmallScreen: isSmallScreen))),
-          const SizedBox(height: 120),
-        ],
-      ),
-    );
-  }
-}
-
-class _CommunityCard extends StatelessWidget {
-  final CommunityModel community;
-  final bool isSmallScreen;
-
-  const _CommunityCard({required this.community, required this.isSmallScreen});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityChatScreen(community: community)));
-      },
-      child: Container(
-        padding: EdgeInsets.all(isSmallScreen ? 12 : 14),
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.divider),
-          boxShadow: [BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: isSmallScreen ? 44 : 50,
-              height: isSmallScreen ? 44 : 50,
-              decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-              child: Icon(Icons.forum_rounded, color: AppColors.primary, size: isSmallScreen ? 22 : 26),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(community.name, style: TextStyle(fontSize: isSmallScreen ? 14 : 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Text('${community.memberCount} thành viên', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.textSecondary)),
-                      const SizedBox(width: 8),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF4ADE80), shape: BoxShape.circle)),
-                          const SizedBox(width: 4),
-                          Text('${community.onlineCount} online', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.success)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right, color: AppColors.textLight, size: isSmallScreen ? 22 : 26),
-          ],
-        ),
-      ),
     );
   }
 }

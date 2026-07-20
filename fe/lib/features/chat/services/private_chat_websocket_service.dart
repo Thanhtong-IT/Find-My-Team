@@ -50,17 +50,20 @@ void subscribeToPrivateQueue(String currentUserId) {
   if (_stompClient == null || !_stompClient!.connected) return;
 
   _stompClient!.subscribe(
-    destination: '/topic/chat.private.$currentUserId', // 👈 Hết lỗi gạch đỏ!
+    destination: '/topic/chat.private.$currentUserId',
     callback: (frame) {
-      debugPrint('[STOMP] ĐÃ NHẬN ĐƯỢC PHẢN HỒI THÔ: ${frame.body}');
+      debugPrint('[STOMP] NHẬN TIN NHẮN REALTIME: ${frame.body}');
       if (frame.body != null) {
         final Map<String, dynamic> json = jsonDecode(frame.body!);
-        final message = PrivateMessage.fromJson(json);
+        final message = PrivateMessage.fromJson(json, currentUserId: currentUserId);
+        
+        // Chỉ đẩy vào stream nếu tin nhắn không phải do chính user hiện tại vừa gửi (đã được REST API xử lý)
+        // Hoặc nếu backend không trả về clientMessageId trong websocket để deduplicate
         _messageController.add(message);
       }
     },
   );
-  debugPrint('[STOMP] Subscribed thành công vào topic cá nhân');
+  debugPrint('[STOMP] Đã lắng nghe tin nhắn tại /topic/chat.private.$currentUserId');
 }
 
   void sendRealtimeMessage({

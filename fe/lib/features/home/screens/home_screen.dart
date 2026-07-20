@@ -129,10 +129,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: const [
                       SizedBox(height: 20),
                       _HomeHeader(),
-                      SizedBox(height: 20),
-                      _HomeSearchBar(),
-                      SizedBox(height: 24),
-                      _FeaturedActionCard(),
                       SizedBox(height: 24),
                       _SectionTitle(title: 'Game phổ biến'),
                       SizedBox(height: 12),
@@ -198,76 +194,6 @@ class _HomeHeader extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _HomeSearchBar extends StatelessWidget {
-  const _HomeSearchBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
-      child: const Row(
-        children: [
-          SizedBox(width: 16),
-          Icon(Icons.search, color: AppColors.textLight, size: 20),
-          SizedBox(width: 12),
-          Expanded(
-            child: Text('Tìm game, đội hoặc cộng đồng...', style: TextStyle(fontSize: 14, color: AppColors.textLight)),
-          ),
-          SizedBox(width: 16),
-        ],
-      ),
-    );
-  }
-}
-
-class _FeaturedActionCard extends StatelessWidget {
-  const _FeaturedActionCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(colors: [AppColors.primary, AppColors.secondary], begin: Alignment.topLeft, end: Alignment.bottomRight),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 6))],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Tìm đồng đội phù hợp', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.white)),
-                const SizedBox(height: 6),
-                const Text('Tạo yêu cầu tìm team theo game, rank và thời gian chơi của bạn.', style: TextStyle(fontSize: 13, color: AppColors.white)),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: 140, height: 40,
-                  child: ElevatedButton(
-                    onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Tính năng đang phát triển'), backgroundColor: AppColors.primary, behavior: SnackBarBehavior.floating),
-                    ),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.white, foregroundColor: AppColors.primary, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                    child: const Text('Tạo yêu cầu', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
-          Container(
-            width: 80, height: 80,
-            decoration: BoxDecoration(color: AppColors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(16)),
-            child: const Icon(Icons.groups_rounded, size: 40, color: AppColors.white),
-          ),
-        ],
-      ),
     );
   }
 }
