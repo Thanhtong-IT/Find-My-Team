@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import '../../../core/constants/constants.dart';
 import '../../../core/repository/secure_storage_repository.dart';
+import '../../../core/chat/unread_friend_manager.dart';
 import '../bloc/private_chat_bloc.dart';
 import '../models/private_message.dart';
 import '../services/private_chat_api_service.dart';
@@ -36,6 +37,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
   @override
   void initState() {
     super.initState();
+    UnreadFriendManager.instance.activeChatFriendId = widget.friendId;
+    UnreadFriendManager.instance.markAsRead(widget.friendId);
     _initAndConnect();
     _scrollController.addListener(_onScroll);
   }
@@ -57,8 +60,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         _wsService.connect(
           baseUrl: baseUrl, 
           token: token, 
-          currentUserId: userId!,
-);
+          currentUserId: userId,
+        );
       }
     }
   }
@@ -72,6 +75,9 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
 
   @override
   void dispose() {
+    if (UnreadFriendManager.instance.activeChatFriendId == widget.friendId) {
+      UnreadFriendManager.instance.activeChatFriendId = null;
+    }
     _wsService.disconnect();
     _textController.dispose();
     _scrollController.dispose();
@@ -137,7 +143,7 @@ class _PrivateChatView extends StatelessWidget {
           children: [
             CircleAvatar(
               radius: 18,
-              backgroundColor: AppColors.primary.withOpacity(0.1),
+              backgroundColor: AppColors.primary.withValues(alpha: 0.1),
               backgroundImage: friendAvatar != null && friendAvatar!.isNotEmpty
                   ? NetworkImage(friendAvatar!)
                   : null,
@@ -214,7 +220,10 @@ class _PrivateChatView extends StatelessWidget {
                     }
 
                     final message = messages[index];
-                    return _MessageBubble(message: message);
+                    return _MessageBubble(
+                      message: message,
+                      friendAvatar: friendAvatar,
+                    );
                   },
                 );
               },
@@ -233,7 +242,7 @@ class _PrivateChatView extends StatelessWidget {
         color: AppColors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           )
@@ -290,8 +299,12 @@ class _PrivateChatView extends StatelessWidget {
 
 class _MessageBubble extends StatelessWidget {
   final PrivateMessage message;
+  final String? friendAvatar;
 
-  const _MessageBubble({required this.message});
+  const _MessageBubble({
+    required this.message,
+    this.friendAvatar,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -307,9 +320,15 @@ class _MessageBubble extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!isMe) ...[
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 14,
-                  child: Icon(Icons.person, size: 16),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                  backgroundImage: friendAvatar != null && friendAvatar!.isNotEmpty
+                      ? NetworkImage(friendAvatar!)
+                      : null,
+                  child: friendAvatar == null || friendAvatar!.isEmpty
+                      ? const Icon(Icons.person, size: 16, color: AppColors.primary)
+                      : null,
                 ),
                 const SizedBox(width: 8),
               ],

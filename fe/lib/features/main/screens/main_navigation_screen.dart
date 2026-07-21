@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/chat/unread_friend_manager.dart';
 import '../../home/screens/home_screen.dart';
 import '../../explore/screens/explore_screen.dart';
 import '../../team/screens/team_screen.dart';
@@ -17,11 +19,23 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   late int _currentIndex;
+  StreamSubscription? _unreadSub;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
+    _unreadSub = UnreadFriendManager.instance.stream.listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _unreadSub?.cancel();
+    super.dispose();
   }
 
   void setTab(int index) {
@@ -70,6 +84,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
   Widget _buildNavItem({required int index, required IconData icon, required String label}) {
     final isSelected = _currentIndex == index;
+    final hasUnreadFriends = index == 3 && UnreadFriendManager.instance.hasUnread;
+
     return SizedBox(
       width: MediaQuery.of(context).size.width / 5,
       child: GestureDetector(
@@ -78,7 +94,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 26, color: isSelected ? AppColors.primary : AppColors.textLight),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon, size: 26, color: isSelected ? AppColors.primary : AppColors.textLight),
+                if (hasUnreadFriends)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.white, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 4),
             Text(
               label,

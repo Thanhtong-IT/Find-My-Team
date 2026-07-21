@@ -7,6 +7,7 @@ import '../../../core/constants/api_constants.dart';
 import '../../../core/repository/secure_storage_repository.dart';
 import '../../../core/websocket/websocket_client.dart';
 import '../../../core/events/event_bus.dart';
+import '../../../core/chat/unread_friend_manager.dart';
 import '../models/auth_tokens.dart';
 import '../services/auth_api_service.dart';
 import 'auth_event.dart';
@@ -58,6 +59,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       _isAuthenticated = true;
       debugPrint('[Auth] Check thành công: ${user.email}');
       _connectWebSocket();
+      UnreadFriendManager.instance.init(user.id);
       emit(AuthState.authenticated(user));
     } on DioException catch (e) {
       debugPrint('[Auth] Check thất bại: ${e.message}');
@@ -85,6 +87,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       _isAuthenticated = true;
       debugPrint('[Auth] Login thành công: ${event.email}');
       _connectWebSocket();
+      UnreadFriendManager.instance.init(result.user.id);
       emit(AuthState.authenticated(result.user));
     } on DioException catch (e) {
       final msg = e.response?.data?['message'] as String? ??
@@ -118,6 +121,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       _isAuthenticated = true;
       debugPrint('[Auth] Register thành công: ${event.email}');
       _connectWebSocket();
+      UnreadFriendManager.instance.init(result.user.id);
       emit(AuthState.authenticated(result.user));
     } on DioException catch (e) {
       final msg = e.response?.data?['message'] as String? ??
@@ -138,6 +142,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     _isAuthenticated = false;
+    UnreadFriendManager.instance.clear();
     AppEventBus.instance.unregister();
     await _secureStorage.clearAll();
     _wsClient.disconnect();

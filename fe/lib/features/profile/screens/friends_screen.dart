@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/constants/constants.dart';
+import '../../../core/chat/unread_friend_manager.dart';
 import '../../team/services/friendship_api_service.dart';
 import '../../team/models/friendship_model.dart';
 import '../../chat/screens/private_chat_screen.dart';
@@ -17,11 +19,23 @@ class _FriendsScreenState extends State<FriendsScreen> {
   bool _isLoading = true;
   String? _error;
   List<FriendshipModel> _friends = [];
+  StreamSubscription? _unreadSub;
 
   @override
   void initState() {
     super.initState();
     _loadFriends();
+    _unreadSub = UnreadFriendManager.instance.stream.listen((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _unreadSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadFriends() async {
@@ -171,9 +185,27 @@ class _FriendsScreenState extends State<FriendsScreen> {
       itemCount: _friends.length,
       itemBuilder: (context, index) {
         final friend = _friends[index];
+        final hasUnread = UnreadFriendManager.instance.hasUnreadFrom(friend.friendId);
+        
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
-          child: _FriendTile(friend: friend, isSmallScreen: isSmallScreen),
+          child: _FriendTile(
+            friend: friend, 
+            isSmallScreen: isSmallScreen,
+            hasUnread: hasUnread,
+            onTap: () {
+              UnreadFriendManager.instance.markAsRead(friend.friendId);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => PrivateChatScreen(
+                    friendId: friend.friendId,
+                    friendName: friend.displayName,
+                    friendAvatar: friend.friendAvatarUrl,
+                  ),
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -183,8 +215,15 @@ class _FriendsScreenState extends State<FriendsScreen> {
 class _FriendTile extends StatelessWidget {
   final FriendshipModel friend;
   final bool isSmallScreen;
+  final bool hasUnread;
+  final VoidCallback onTap;
 
-  const _FriendTile({required this.friend, required this.isSmallScreen});
+  const _FriendTile({
+    required this.friend, 
+    required this.isSmallScreen,
+    this.hasUnread = false,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -232,27 +271,36 @@ class _FriendTile extends StatelessWidget {
               ],
             ),
           ),
-          TextButton.icon(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => PrivateChatScreen(
-                    friendId: friend.friendId,
-                    friendName: friend.displayName,
-                    friendAvatar: friend.friendAvatarUrl,
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              TextButton.icon(
+                onPressed: onTap,
+                icon: Icon(Icons.chat_bubble_outline_rounded, size: isSmallScreen ? 16 : 18),
+                label: Text(
+                  'Nhắn tin',
+                  style: TextStyle(fontSize: isSmallScreen ? 11 : 12),
+                ),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.08),
+                ),
+              ),
+              if (hasUnread)
+                Positioned(
+                  top: -2,
+                  right: -2,
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: AppColors.error,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppColors.white, width: 1.5),
+                    ),
                   ),
                 ),
-              );
-            },
-            icon: Icon(Icons.chat_bubble_outline_rounded, size: isSmallScreen ? 16 : 18),
-            label: Text(
-              'Nhắn tin',
-              style: TextStyle(fontSize: isSmallScreen ? 11 : 12),
-            ),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              backgroundColor: AppColors.primary.withValues(alpha: 0.08),
-            ),
+            ],
           ),
         ],
       ),
