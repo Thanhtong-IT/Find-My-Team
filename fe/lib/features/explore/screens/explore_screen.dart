@@ -467,7 +467,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       const SizedBox(height: 24),
                       _SectionHeader(
                         title: 'Đội đang mở',
-                        onViewAll: () {},
                         isSmallScreen: isSmallScreen,
                       ),
                       const SizedBox(height: 12),
@@ -498,50 +497,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                                         onShare: () => _showSnackBar(
                                           'Chia sẻ thông tin đội',
                                         ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            )),
-                      const SizedBox(height: 8),
-                      _SectionHeader(
-                        title: 'Người chơi đang online',
-                        onViewAll: () {},
-                        isSmallScreen: isSmallScreen,
-                      ),
-                      const SizedBox(height: 12),
-                      (_isLoadingPlayers
-                          ? const Center(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(vertical: 24),
-                                child: CircularProgressIndicator(),
-                              ),
-                            )
-                          : _filteredPlayers.isEmpty
-                          ? _EmptyState(
-                              message: 'Không có người chơi nào phù hợp',
-                              isSmallScreen: isSmallScreen,
-                            )
-                          : Column(
-                              children: _filteredPlayers
-                                  .map(
-                                    (player) => Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _OnlinePlayerCardFromApi(
-                                        player: player,
-                                        isSmallScreen: isSmallScreen,
-                                        onProfile: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => UserProfileScreen(
-                                                userId: player.userId,
-                                              ),
-                                            ),
-                                          );
-                                        },
                                       ),
                                     ),
                                   )
@@ -722,12 +677,12 @@ class _GameFilterChips extends StatelessWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  final VoidCallback onViewAll;
+  final VoidCallback? onViewAll;
   final bool isSmallScreen;
 
   const _SectionHeader({
     required this.title,
-    required this.onViewAll,
+    this.onViewAll,
     required this.isSmallScreen,
   });
 
@@ -744,17 +699,18 @@ class _SectionHeader extends StatelessWidget {
             color: AppColors.textPrimary,
           ),
         ),
-        GestureDetector(
-          onTap: onViewAll,
-          child: Text(
-            'Xem tất cả',
-            style: TextStyle(
-              fontSize: isSmallScreen ? 12 : 13,
-              color: AppColors.primary,
-              fontWeight: FontWeight.w500,
+        if (onViewAll != null)
+          GestureDetector(
+            onTap: onViewAll,
+            child: Text(
+              'Xem tất cả',
+              style: TextStyle(
+                fontSize: isSmallScreen ? 12 : 13,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-        ),
       ],
     );
   }

@@ -147,11 +147,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(height: isSmallScreen ? 16 : 20),
-                      if (profile.gameInfo != null)
-                        ProfileGameInfoCard(gameInfo: profile.gameInfo!, isSmallScreen: isSmallScreen),
-                      SizedBox(height: isSmallScreen ? 12 : 16),
-                      ProfileStatCard(stats: profile.stats, isSmallScreen: isSmallScreen),
-                      SizedBox(height: isSmallScreen ? 12 : 16),
+                      if (userProfile.gameProfiles.isNotEmpty) ...[
+                        _buildGameProfilesSection(isSmallScreen, userProfile.gameProfiles),
+                        SizedBox(height: isSmallScreen ? 12 : 16),
+                      ],
                       _buildCurrentTeam(profile, isSmallScreen, context),
                       SizedBox(height: isSmallScreen ? 12 : 16),
                       _buildSettingsSection(isSmallScreen, context, userProfile, state.popularGames),
@@ -261,6 +260,113 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ],
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGameProfilesSection(bool isSmallScreen, List<UserGameProfileModel> gameProfiles) {
+    if (gameProfiles.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 14 : 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 16),
+        border: Border.all(color: AppColors.divider),
+        boxShadow: [BoxShadow(color: AppColors.divider.withValues(alpha: 0.4), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Game profiles', style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+          const SizedBox(height: 12),
+          ...gameProfiles.asMap().entries.map((entry) {
+            final index = entry.key;
+            final gp = entry.value;
+            final isLast = index == gameProfiles.length - 1;
+            return Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 10),
+              child: Container(
+                padding: EdgeInsets.all(isSmallScreen ? 10 : 12),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: gp.gameIconUrl != null && gp.gameIconUrl!.isNotEmpty
+                          ? Image.network(
+                              gp.gameIconUrl!,
+                              width: isSmallScreen ? 36 : 40,
+                              height: isSmallScreen ? 36 : 40,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(
+                                width: isSmallScreen ? 36 : 40,
+                                height: isSmallScreen ? 36 : 40,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.sports_esports_rounded, color: AppColors.primary, size: 20),
+                              ),
+                            )
+                          : Container(
+                              width: isSmallScreen ? 36 : 40,
+                              height: isSmallScreen ? 36 : 40,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.sports_esports_rounded, color: AppColors.primary, size: 20),
+                            ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            gp.gameName ?? 'Game',
+                            style: TextStyle(fontSize: isSmallScreen ? 13 : 14, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          ),
+                          if (gp.inGameName != null && gp.inGameName!.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              'Ingame: ${gp.inGameName}',
+                              style: TextStyle(fontSize: isSmallScreen ? 11 : 12, color: AppColors.primary, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (gp.displayRank != null && gp.displayRank!.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.divider),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.emoji_events_outlined, size: isSmallScreen ? 14 : 16, color: AppColors.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              gp.displayRank!,
+                              style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          }),
         ],
       ),
     );
@@ -462,6 +568,7 @@ class _GameProfileDraft {
   final String? riotRegion;
   final String? riotVerificationStatus;
   final bool riotVerified;
+  final String? inGameName;
 
   const _GameProfileDraft({
     this.id,
@@ -478,6 +585,7 @@ class _GameProfileDraft {
     this.riotRegion,
     this.riotVerificationStatus,
     this.riotVerified = false,
+    this.inGameName,
   });
 
   factory _GameProfileDraft.fromModel(UserGameProfileModel model) {
@@ -496,6 +604,7 @@ class _GameProfileDraft {
       riotRegion: model.riotRegion,
       riotVerificationStatus: model.riotVerificationStatus,
       riotVerified: model.riotVerified,
+      inGameName: model.inGameName,
     );
   }
 
@@ -514,6 +623,7 @@ class _GameProfileDraft {
     String? riotRegion,
     String? riotVerificationStatus,
     bool? riotVerified,
+    String? inGameName,
   }) {
     return _GameProfileDraft(
       id: id ?? this.id,
@@ -530,6 +640,7 @@ class _GameProfileDraft {
       riotRegion: riotRegion ?? this.riotRegion,
       riotVerificationStatus: riotVerificationStatus ?? this.riotVerificationStatus,
       riotVerified: riotVerified ?? this.riotVerified,
+      inGameName: inGameName ?? this.inGameName,
     );
   }
 
@@ -545,6 +656,7 @@ class _GameProfileDraft {
       role: role,
       hasMic: hasMic,
       isPrimary: isPrimary,
+      inGameName: inGameName,
     );
   }
 }
@@ -1064,9 +1176,13 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
     final selectedGame = items.where((game) => game.id == draft.gameId).isNotEmpty
         ? items.firstWhere((game) => game.id == draft.gameId)
         : null;
-    final isRiotGame = _isRiotGameName(draft.gameName ?? selectedGame?.name);
-    final rankReadOnly = isRiotGame && draft.riotVerified && draft.usesVerifiedRank;
-    final riotRegions = _riotRegionsForGame(draft.gameName ?? selectedGame?.name);
+
+    final availableRanks = <String>[
+      ...?selectedGame?.ranks,
+    ];
+    if (draft.rank != null && draft.rank!.isNotEmpty && !availableRanks.contains(draft.rank)) {
+      availableRanks.insert(0, draft.rank!);
+    }
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1078,12 +1194,17 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Game dropdown + delete button
           Row(
             children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
                   initialValue: items.any((game) => game.id == draft.gameId) ? draft.gameId : null,
-                  decoration: const InputDecoration(labelText: 'Game'),
+                  decoration: const InputDecoration(
+                    labelText: 'Game',
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(),
+                  ),
                   items: items
                       .map((game) => DropdownMenuItem<String>(
                             value: game.id,
@@ -1095,15 +1216,15 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                       : (value) {
                           if (value == null) return;
                           final selected = items.firstWhere((game) => game.id == value);
+                          final newRanks = selected.ranks;
+                          final defaultRank = newRanks.isNotEmpty ? newRanks.first : null;
                           setState(() {
                             _drafts[index] = _GameProfileDraft(
                               id: draft.id,
                               gameId: selected.id,
                               gameName: selected.name,
-                              rank: draft.rank,
-                              role: draft.role,
-                              hasMic: draft.hasMic,
-                              isPrimary: draft.isPrimary,
+                              rank: defaultRank,
+                              inGameName: draft.inGameName,
                             );
                           });
                         },
@@ -1116,183 +1237,74 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ],
           ),
           const SizedBox(height: 12),
-          if (isRiotGame) ...[
-            _buildRiotStatus(draft),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    key: ValueKey('riot-game-name-$index-${draft.id ?? draft.gameId}-${draft.riotGameName ?? ''}'),
-                    initialValue: draft.riotGameName ?? '',
-                    enabled: !_isSubmitting,
-                    decoration: InputDecoration(
-                      labelText: 'Riot ID',
-                      hintText: 'gameName',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _drafts[index] = draft.copyWith(riotGameName: value);
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextFormField(
-                    key: ValueKey('riot-tag-line-$index-${draft.id ?? draft.gameId}-${draft.riotTagLine ?? ''}'),
-                    initialValue: draft.riotTagLine ?? '',
-                    enabled: !_isSubmitting,
-                    decoration: InputDecoration(
-                      labelText: 'Tag line',
-                      hintText: 'VN2',
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _drafts[index] = draft.copyWith(riotTagLine: value);
-                      });
-                    },
-                  ),
-                ),
-              ],
+          // Ingame name
+          TextFormField(
+            key: ValueKey('ingame-$index-${draft.id ?? draft.gameId}'),
+            initialValue: draft.inGameName ?? '',
+            enabled: !_isSubmitting,
+            decoration: InputDecoration(
+              labelText: 'Ingame name',
+              hintText: 'Tên trong game của bạn',
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.primary),
+              ),
             ),
-            const SizedBox(height: 12),
+            onChanged: (value) {
+              _drafts[index] = draft.copyWith(inGameName: value);
+            },
+          ),
+          const SizedBox(height: 12),
+          // Rank dropdown (or text fallback if empty)
+          if (availableRanks.isNotEmpty)
             DropdownButtonFormField<String>(
-              initialValue: riotRegions.contains(draft.riotRegion) ? draft.riotRegion : null,
-              decoration: const InputDecoration(labelText: 'Region Riot'),
-              items: riotRegions
-                  .map((region) => DropdownMenuItem<String>(
-                        value: region,
-                        child: Text(region.toUpperCase()),
+              key: ValueKey('rank-dropdown-$index-${draft.gameId}'),
+              initialValue: availableRanks.contains(draft.rank) ? draft.rank : null,
+              decoration: InputDecoration(
+                labelText: 'Rank',
+                hintText: 'Chọn rank',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+              items: availableRanks
+                  .map((r) => DropdownMenuItem<String>(
+                        value: r,
+                        child: Text(r),
                       ))
                   .toList(),
               onChanged: _isSubmitting
                   ? null
                   : (value) {
                       setState(() {
-                        _drafts[index] = draft.copyWith(riotRegion: value);
+                        _drafts[index] = draft.copyWith(rank: value);
                       });
                     },
+            )
+          else
+            TextFormField(
+              key: ValueKey('rank-input-$index-${draft.id ?? draft.gameId}'),
+              initialValue: draft.rank ?? '',
+              enabled: !_isSubmitting,
+              decoration: InputDecoration(
+                labelText: 'Rank',
+                hintText: 'Ví dụ: Vàng II, Plat 1...',
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+              onChanged: (value) {
+                _drafts[index] = draft.copyWith(rank: value);
+              },
             ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : () => _verifyRiot(index),
-                  icon: const Icon(Icons.verified_user_outlined, size: 18),
-                  label: Text(draft.riotVerified ? 'Xác thực lại' : 'Xác thực'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.white,
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _isSubmitting || (draft.id ?? '').isEmpty || !draft.riotVerified ? null : () => _refreshRiot(draft),
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Làm mới'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _isSubmitting || (draft.id ?? '').isEmpty || (!draft.riotVerified && (draft.riotGameName ?? '').isEmpty && (draft.riotTagLine ?? '').isEmpty)
-                      ? null
-                      : () => _unlinkRiot(draft),
-                  icon: const Icon(Icons.link_off, size: 18),
-                  label: const Text('Gỡ liên kết'),
-                ),
-              ],
-            ),
-            if ((draft.id ?? '').isEmpty) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Lưu game profile trước rồi mới xác thực Riot được.',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
-              ),
-            ],
-            const SizedBox(height: 12),
-          ],
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  key: ValueKey('rank-$index-${draft.id ?? draft.gameId}-${draft.displayRank ?? ''}-${draft.riotVerified}'),
-                  initialValue: draft.displayRank ?? '',
-                  readOnly: rankReadOnly,
-                  enabled: !_isSubmitting,
-                  decoration: InputDecoration(
-                    labelText: rankReadOnly ? 'Rank đã xác thực' : 'Rank',
-                    hintText: rankReadOnly ? 'Rank từ Riot' : 'Ví dụ: Vàng II',
-                    helperText: rankReadOnly ? 'Rank thủ công bị khóa sau khi xác thực Riot' : null,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onChanged: rankReadOnly
-                      ? null
-                      : (value) {
-                          setState(() {
-                            _drafts[index] = draft.copyWith(rank: value);
-                          });
-                        },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextFormField(
-                  key: ValueKey('role-$index-${draft.id ?? draft.gameId}-${draft.role ?? ''}'),
-                  initialValue: draft.role ?? '',
-                  enabled: !_isSubmitting,
-                  decoration: InputDecoration(
-                    labelText: 'Role',
-                    hintText: 'Ví dụ: Mid / Support',
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _drafts[index] = draft.copyWith(role: value);
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: draft.hasMic,
-                    title: const Text('Có mic'),
-                    onChanged: _isSubmitting
-                        ? null
-                        : (value) {
-                            setState(() {
-                              _drafts[index] = draft.copyWith(hasMic: value);
-                            });
-                          },
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: SwitchListTile.adaptive(
-                    contentPadding: EdgeInsets.zero,
-                    value: draft.isPrimary,
-                    title: const Text('Profile chính'),
-                    onChanged: _isSubmitting ? null : (value) => _setPrimary(index, value),
-                  ),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

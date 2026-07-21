@@ -5,8 +5,8 @@ import '../../../core/network/dio_client.dart';
 import '../../../core/events/event_bus.dart';
 import '../../notification/screens/notification_screen.dart';
 import '../../profile/models/game_model.dart';
-import '../../team/services/team_api_service.dart';
-import '../../team/models/team_model.dart';
+import '../../profile/screens/user_profile_screen.dart';
+import '../../explore/services/explore_api_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -17,47 +17,38 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<GameModel> _games = [];
-  List<TeamModel> _teams = [];
+  List<OnlinePlayerModel> _onlinePlayers = [];
   bool _isLoadingGames = true;
-  bool _isLoadingTeams = true;
+  bool _isLoadingPlayers = true;
   String? _gamesError;
-  String? _teamsError;
-  StreamSubscription? _exploreTeamSub;
-  StreamSubscription? _teamReloadSub;
+  String? _playersError;
+  StreamSubscription? _presenceSub;
+  final ExploreApiService _exploreApiService = ExploreApiService();
 
   @override
   void initState() {
     super.initState();
     _loadData();
-    _listenTeamEvents();
+    _listenPresenceEvents();
   }
 
-  void _listenTeamEvents() {
-    _exploreTeamSub = AppEventBus.instance.exploreTeamStream.listen((event) {
-      debugPrint('[HomeScreen] Received teamCreated event from WebSocket');
+  void _listenPresenceEvents() {
+    _presenceSub = AppEventBus.instance.presenceStream.listen((_) {
       if (!mounted) return;
-      _loadTeams();
-    });
-
-    // Listen for team reload triggers (e.g., after kick/leave)
-    _teamReloadSub = AppEventBus.instance.teamReloadStream.listen((_) {
-      debugPrint('[HomeScreen] Received teamReload event');
-      if (!mounted) return;
-      _loadTeams();
+      _loadOnlinePlayers(silent: true);
     });
   }
 
   @override
   void dispose() {
-    _exploreTeamSub?.cancel();
-    _teamReloadSub?.cancel();
+    _presenceSub?.cancel();
     super.dispose();
   }
 
   Future<void> _loadData() async {
     await Future.wait([
       _loadGames(),
-      _loadTeams(),
+      _loadOnlinePlayers(),
     ]);
   }
 
@@ -89,23 +80,23 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadTeams() async {
+  Future<void> _loadOnlinePlayers({bool silent = false}) async {
     if (!mounted) return;
-    setState(() => _isLoadingTeams = true);
+    if (!silent) setState(() => _isLoadingPlayers = true);
 
     try {
-      final teams = await TeamApiService().getRecruitingTeams(limit: 5);
+      final players = await _exploreApiService.getOnlinePlayers();
       if (mounted) {
         setState(() {
-          _teams = teams;
-          _isLoadingTeams = false;
+          _onlinePlayers = players;
+          _isLoadingPlayers = false;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _teamsError = 'Không thể tải đội';
-          _isLoadingTeams = false;
+          _playersError = 'Không thể tải người chơi';
+          _isLoadingPlayers = false;
         });
       }
     }
@@ -147,16 +138,16 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: const [
                       SizedBox(height: 24),
-                      _SectionTitle(title: 'Đội đang tuyển'),
+                      _SectionTitle(title: 'Người chơi đang online'),
                       SizedBox(height: 12),
                     ],
                   ),
                 ),
-                _RecruitingTeamsSection(
-                  teams: _teams,
-                  isLoading: _isLoadingTeams,
-                  error: _teamsError,
-                  onRetry: _loadTeams,
+                _OnlinePlayersSection(
+                  players: _onlinePlayers,
+                  isLoading: _isLoadingPlayers,
+                  error: _playersError,
+                  onRetry: _loadOnlinePlayers,
                 ),
                 const SizedBox(height: 24),
               ],
@@ -204,12 +195,9 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-        const Text('Xem tất cả', style: TextStyle(fontSize: 13, color: AppColors.primary, fontWeight: FontWeight.w500)),
-      ],
+    return Text(
+      title,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
     );
   }
 }
@@ -266,8 +254,10 @@ class _PopularGamesSection extends StatelessWidget {
           final game = games[index];
           return _PopularGameCard(
             name: game.name,
-            teams: '${game.ranks.length} ranks',
-            icon: Icons.sports_esports_rounded,
+            rankCount: game.ranks.length,
+            iconUrl: game.iconUrl,
+            gradientStart: game.gradientStart,
+            gradientEnd: game.gradientEnd,
           );
         },
       ),
@@ -277,13 +267,34 @@ class _PopularGamesSection extends StatelessWidget {
 
 class _PopularGameCard extends StatelessWidget {
   final String name;
-  final String teams;
-  final IconData icon;
+  final int rankCount;
+  final String? iconUrl;
+  final String? gradientStart;
+  final String? gradientEnd;
 
-  const _PopularGameCard({required this.name, required this.teams, required this.icon});
+  const _PopularGameCard({
+    required this.name,
+    required this.rankCount,
+    this.iconUrl,
+    this.gradientStart,
+    this.gradientEnd,
+  });
+
+  Color _parseHex(String? hex, Color fallback) {
+    if (hex == null || hex.isEmpty) return fallback;
+    try {
+      return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    } catch (_) {
+      return fallback;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final colorStart = _parseHex(gradientStart, AppColors.primary);
+    final colorEnd = _parseHex(gradientEnd, const Color(0xFF0F172A));
+    final hasImage = iconUrl != null && iconUrl!.isNotEmpty;
+
     return Container(
       width: 100,
       padding: const EdgeInsets.all(12),
@@ -296,29 +307,82 @@ class _PopularGameCard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 40, height: 40,
-            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, color: AppColors.primary, size: 22),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: hasImage
+                ? Image.network(
+                    iconUrl!,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _GradientFallback(
+                      colorStart: colorStart,
+                      colorEnd: colorEnd,
+                    ),
+                    loadingBuilder: (_, child, progress) => progress == null
+                        ? child
+                        : Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [colorStart, colorEnd],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                            ),
+                          ),
+                  )
+                : _GradientFallback(colorStart: colorStart, colorEnd: colorEnd),
           ),
           const SizedBox(height: 8),
-          Text(name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(
+            name,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           const SizedBox(height: 2),
-          Text(teams, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          Text(
+            '$rankCount ranks',
+            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
         ],
       ),
     );
   }
 }
 
-class _RecruitingTeamsSection extends StatelessWidget {
-  final List<TeamModel> teams;
+class _GradientFallback extends StatelessWidget {
+  final Color colorStart;
+  final Color colorEnd;
+  const _GradientFallback({required this.colorStart, required this.colorEnd});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [colorStart, colorEnd],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 20),
+    );
+  }
+}
+
+class _OnlinePlayersSection extends StatelessWidget {
+  final List<OnlinePlayerModel> players;
   final bool isLoading;
   final String? error;
   final VoidCallback onRetry;
 
-  const _RecruitingTeamsSection({
-    required this.teams,
+  const _OnlinePlayersSection({
+    required this.players,
     required this.isLoading,
     this.error,
     required this.onRetry,
@@ -333,7 +397,7 @@ class _RecruitingTeamsSection extends StatelessWidget {
       );
     }
 
-    if (error != null && teams.isEmpty) {
+    if (error != null && players.isEmpty) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Center(
@@ -345,116 +409,151 @@ class _RecruitingTeamsSection extends StatelessWidget {
       );
     }
 
-    if (teams.isEmpty) {
+    if (players.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(horizontal: 20),
         child: SizedBox(
           height: 100,
-          child: Center(child: Text('Chưa có đội nào đang tuyển')),
+          child: Center(child: Text('Chưa có người chơi nào online')),
         ),
       );
     }
 
     return Column(
-      children: teams.map((team) {
-        final slotsNeeded = team.maxMembers - team.members.length;
-        final needText = slotsNeeded > 0 ? 'Cần $slotsNeeded người' : 'Đã đủ';
-
+      children: players.map((player) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-          child: _RecruitingTeamCard(
-            name: team.name,
-            game: team.gameName,
-            rank: team.requiredRank ?? 'Không yêu cầu',
-            need: needText,
-          ),
+          child: _OnlinePlayerCard(player: player),
         );
       }).toList(),
     );
   }
 }
 
-class _RecruitingTeamCard extends StatelessWidget {
-  final String name;
-  final String game;
-  final String rank;
-  final String need;
+class _OnlinePlayerCard extends StatelessWidget {
+  final OnlinePlayerModel player;
 
-  const _RecruitingTeamCard({required this.name, required this.game, required this.rank, required this.need});
+  const _OnlinePlayerCard({required this.player});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.divider),
-        boxShadow: [BoxShadow(color: AppColors.divider.withValues(alpha: 0.5), blurRadius: 8, offset: const Offset(0, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.groups_rounded, color: AppColors.primary, size: 24),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                    const SizedBox(height: 2),
-                    Text(game, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                child: Text(need, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.success)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _InfoChip(label: rank, icon: Icons.emoji_events_outlined),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity, height: 40,
-            child: OutlinedButton(
-              onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Đang xem chi tiết: $name'), backgroundColor: AppColors.primary, behavior: SnackBarBehavior.floating),
-              ),
-              style: OutlinedButton.styleFrom(foregroundColor: AppColors.primary, side: const BorderSide(color: AppColors.primary), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: const Text('Xem chi tiết', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.divider.withValues(alpha: 0.5),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _InfoChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  const _InfoChip({required this.label, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(8)),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppColors.textSecondary),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+          Stack(
+            children: [
+              CircleAvatar(
+                radius: 26,
+                backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                backgroundImage: player.avatarUrl != null && player.avatarUrl!.isNotEmpty
+                    ? NetworkImage(player.avatarUrl!)
+                    : null,
+                child: player.avatarUrl == null || player.avatarUrl!.isEmpty
+                    ? const Icon(Icons.person, color: AppColors.primary, size: 26)
+                    : null,
+              ),
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: AppColors.success,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.white, width: 2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  player.displayName,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${player.username ?? ''}${player.gameName != null ? ' • ${player.gameName}' : ''}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (player.rank != null && player.rank!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.emoji_events_outlined, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                        Text(
+                          player.rank!,
+                          style: const TextStyle(fontSize: 11, color: AppColors.textPrimary, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            height: 34,
+            child: OutlinedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => UserProfileScreen(userId: player.userId),
+                  ),
+                );
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                side: const BorderSide(color: AppColors.primary),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text(
+                'Hồ sơ',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
         ],
       ),
     );

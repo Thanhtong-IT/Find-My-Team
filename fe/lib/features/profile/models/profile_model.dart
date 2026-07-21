@@ -97,6 +97,9 @@ class UserGameProfileModel {
   final String id;
   final String gameId;
   final String? gameName;
+  final String? gameIconUrl;
+  final String? gameGradientStart;
+  final String? gameGradientEnd;
   final String? rank;
   final String? verifiedRank;
   final String? rankSource;
@@ -111,11 +114,15 @@ class UserGameProfileModel {
   final DateTime? riotVerifiedAt;
   final DateTime? riotProfileLastSyncedAt;
   final DateTime createdAt;
+  final String? inGameName;
 
   const UserGameProfileModel({
     required this.id,
     required this.gameId,
     this.gameName,
+    this.gameIconUrl,
+    this.gameGradientStart,
+    this.gameGradientEnd,
     this.rank,
     this.verifiedRank,
     this.rankSource,
@@ -130,6 +137,7 @@ class UserGameProfileModel {
     this.riotVerifiedAt,
     this.riotProfileLastSyncedAt,
     required this.createdAt,
+    this.inGameName,
   });
 
   bool get usesVerifiedRank => (rankSource ?? '').toUpperCase() == 'RIOT';
@@ -150,6 +158,9 @@ class UserGameProfileModel {
       id: json['id']?.toString() ?? '',
       gameId: json['gameId']?.toString() ?? '',
       gameName: json['gameName'] as String?,
+      gameIconUrl: json['gameIconUrl'] as String? ?? json['iconUrl'] as String?,
+      gameGradientStart: json['gameGradientStart'] as String? ?? json['gradientStart'] as String?,
+      gameGradientEnd: json['gameGradientEnd'] as String? ?? json['gradientEnd'] as String?,
       rank: json['rank'] as String?,
       verifiedRank: json['verifiedRank'] as String?,
       rankSource: json['rankSource'] as String?,
@@ -170,6 +181,7 @@ class UserGameProfileModel {
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? DateTime.now()
           : DateTime.now(),
+      inGameName: json['inGameName'] as String?,
     );
   }
 }
@@ -181,6 +193,7 @@ class GameProfileUpdateItem {
   final String? role;
   final bool hasMic;
   final bool isPrimary;
+  final String? inGameName;
 
   const GameProfileUpdateItem({
     this.id,
@@ -189,6 +202,7 @@ class GameProfileUpdateItem {
     this.role,
     this.hasMic = false,
     this.isPrimary = false,
+    this.inGameName,
   });
 
   factory GameProfileUpdateItem.fromModel(UserGameProfileModel model) {
@@ -210,6 +224,7 @@ class GameProfileUpdateItem {
       'role': role,
       'hasMic': hasMic,
       'isPrimary': isPrimary,
+      if (inGameName != null) 'inGameName': inGameName,
     };
   }
 }

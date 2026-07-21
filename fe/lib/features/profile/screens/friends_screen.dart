@@ -19,12 +19,13 @@ class _FriendsScreenState extends State<FriendsScreen> {
   bool _isLoading = true;
   String? _error;
   List<FriendshipModel> _friends = [];
+  List<FriendshipModel> _pendingRequests = [];
   StreamSubscription? _unreadSub;
 
   @override
   void initState() {
     super.initState();
-    _loadFriends();
+    _loadData();
     _unreadSub = UnreadFriendManager.instance.stream.listen((_) {
       if (mounted) {
         setState(() {});
@@ -38,16 +39,20 @@ class _FriendsScreenState extends State<FriendsScreen> {
     super.dispose();
   }
 
-  Future<void> _loadFriends() async {
+  Future<void> _loadData() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
-      final friends = await _api.getFriends();
+      final results = await Future.wait([
+        _api.getFriends(),
+        _api.getPendingRequests(),
+      ]);
       if (!mounted) return;
       setState(() {
-        _friends = friends;
+        _friends = results[0];
+        _pendingRequests = results[1].where((r) => r.isReceived || r.direction == null).toList();
         _isLoading = false;
       });
     } catch (e) {
@@ -56,6 +61,38 @@ class _FriendsScreenState extends State<FriendsScreen> {
         _error = 'Không thể tải danh sách bạn bè';
         _isLoading = false;
       });
+    }
+  }
+
+  Future<void> _acceptRequest(String friendshipId) async {
+    try {
+      await _api.acceptFriendRequest(friendshipId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã chấp nhận lời mời kết bạn'), backgroundColor: AppColors.success),
+      );
+      _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
+      );
+    }
+  }
+
+  Future<void> _rejectRequest(String friendshipId) async {
+    try {
+      await _api.rejectFriendRequest(friendshipId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã từ chối lời mời kết bạn')),
+      );
+      _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString()), backgroundColor: AppColors.error),
+      );
     }
   }
 
@@ -84,7 +121,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
             ),
             Text(
-              '${_friends.length} người bạn',
+              '${_friends.length} người bạn${_pendingRequests.isNotEmpty ? ' • ${_pendingRequests.length} lời mời' : ''}',
               style: TextStyle(
                 fontSize: isSmallScreen ? 11 : 13,
                 color: AppColors.textSecondary,
@@ -94,7 +131,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         ),
         actions: [
           GestureDetector(
-            onTap: _loadFriends,
+            onTap: _loadData,
             child: Container(
               width: 40,
               height: 40,
@@ -117,7 +154,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
         toolbarHeight: isSmallScreen ? 80 : 90,
       ),
       body: RefreshIndicator(
-        onRefresh: _loadFriends,
+        onRefresh: _loadData,
         color: AppColors.primary,
         child: _buildBody(isSmallScreen),
       ),
@@ -145,7 +182,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ),
               const SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _loadFriends,
+                onPressed: _loadData,
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, foregroundColor: AppColors.white),
                 child: const Text('Thử lại'),
               ),
@@ -155,59 +192,180 @@ class _FriendsScreenState extends State<FriendsScreen> {
       );
     }
 
-    if (_friends.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.people_outline_rounded, size: isSmallScreen ? 48 : 56, color: AppColors.textLight),
-              const SizedBox(height: 16),
-              Text(
-                'Chưa có bạn bè nào',
-                style: TextStyle(fontSize: isSmallScreen ? 14 : 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Hãy kết bạn với người chơi khác để xem tại đây',
-                style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 16 : 20, vertical: isSmallScreen ? 8 : 12),
-      itemCount: _friends.length,
-      itemBuilder: (context, index) {
-        final friend = _friends[index];
-        final hasUnread = UnreadFriendManager.instance.hasUnreadFrom(friend.friendId);
-        
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _FriendTile(
-            friend: friend, 
-            isSmallScreen: isSmallScreen,
-            hasUnread: hasUnread,
-            onTap: () {
-              UnreadFriendManager.instance.markAsRead(friend.friendId);
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => PrivateChatScreen(
-                    friendId: friend.friendId,
-                    friendName: friend.displayName,
-                    friendAvatar: friend.friendAvatarUrl,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_pendingRequests.isNotEmpty) ...[
+            Text(
+              'Lời mời kết bạn (${_pendingRequests.length})',
+              style: TextStyle(
+                fontSize: isSmallScreen ? 14 : 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ..._pendingRequests.map((req) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _PendingRequestTile(
+                request: req,
+                isSmallScreen: isSmallScreen,
+                onAccept: () => req.id != null ? _acceptRequest(req.id!) : null,
+                onReject: () => req.id != null ? _rejectRequest(req.id!) : null,
+              ),
+            )),
+            const SizedBox(height: 16),
+          ],
+          Text(
+            'Danh sách bạn bè (${_friends.length})',
+            style: TextStyle(
+              fontSize: isSmallScreen ? 14 : 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (_friends.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Center(
+                child: Column(
+                  children: [
+                    Icon(Icons.people_outline_rounded, size: isSmallScreen ? 48 : 56, color: AppColors.textLight),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Chưa có bạn bè nào',
+                      style: TextStyle(fontSize: isSmallScreen ? 14 : 16, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Hãy kết bạn với người chơi khác để xem tại đây',
+                      style: TextStyle(fontSize: isSmallScreen ? 12 : 13, color: AppColors.textSecondary),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            ..._friends.map((friend) {
+              final hasUnread = UnreadFriendManager.instance.hasUnreadFrom(friend.friendId);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _FriendTile(
+                  friend: friend,
+                  isSmallScreen: isSmallScreen,
+                  hasUnread: hasUnread,
+                  onTap: () {
+                    UnreadFriendManager.instance.markAsRead(friend.friendId);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => PrivateChatScreen(
+                          friendId: friend.friendId,
+                          friendName: friend.displayName,
+                          friendAvatar: friend.friendAvatarUrl,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               );
-            },
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingRequestTile extends StatelessWidget {
+  final FriendshipModel request;
+  final bool isSmallScreen;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  const _PendingRequestTile({
+    required this.request,
+    required this.isSmallScreen,
+    required this.onAccept,
+    required this.onReject,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(isSmallScreen ? 12 : 16),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+        boxShadow: [BoxShadow(color: AppColors.primary.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 3))],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: isSmallScreen ? 22 : 26,
+            backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+            backgroundImage: request.friendAvatarUrl != null && request.friendAvatarUrl!.isNotEmpty
+                ? NetworkImage(request.friendAvatarUrl!)
+                : null,
+            child: request.friendAvatarUrl == null || request.friendAvatarUrl!.isEmpty
+                ? Icon(Icons.person, color: AppColors.primary, size: isSmallScreen ? 22 : 26)
+                : null,
           ),
-        );
-      },
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.displayName,
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 14 : 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '@${request.friendUsername}',
+                  style: TextStyle(
+                    fontSize: isSmallScreen ? 11 : 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: onReject,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.textSecondary,
+              side: const BorderSide(color: AppColors.divider),
+              padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 8 : 12, vertical: 0),
+              minimumSize: const Size(0, 34),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('Từ chối', style: TextStyle(fontSize: isSmallScreen ? 11 : 12)),
+          ),
+          const SizedBox(width: 6),
+          ElevatedButton(
+            onPressed: onAccept,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.white,
+              elevation: 0,
+              padding: EdgeInsets.symmetric(horizontal: isSmallScreen ? 10 : 14, vertical: 0),
+              minimumSize: const Size(0, 34),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text('Chấp nhận', style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -219,7 +377,7 @@ class _FriendTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _FriendTile({
-    required this.friend, 
+    required this.friend,
     required this.isSmallScreen,
     this.hasUnread = false,
     required this.onTap,
