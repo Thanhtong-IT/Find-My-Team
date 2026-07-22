@@ -41,3 +41,22 @@ class AuthRegisterRequested extends AuthEvent {
 class AuthLogoutRequested extends AuthEvent {
   const AuthLogoutRequested();
 }
+
+class AuthVerifyOtpRequested extends AuthEvent {
+  final String email;
+  final String otp;
+
+  const AuthVerifyOtpRequested({required this.email, required this.otp});
+
+  @override
+  List<Object?> get props => [email, otp];
+}
+
+class AuthResendOtpRequested extends AuthEvent {
+  final String email;
+
+  const AuthResendOtpRequested({required this.email});
+
+  @override
+  List<Object?> get props => [email];
+}

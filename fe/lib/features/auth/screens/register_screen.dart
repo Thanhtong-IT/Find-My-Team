@@ -65,47 +65,60 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<AuthBloc, AuthState>(
-      listenWhen: (prev, curr) =>
-          curr.status == AuthStatus.error && prev.status != AuthStatus.error,
-      listener: (context, state) {
-        if (state.errorMessage != null) {
-          _showSnackBar(state.errorMessage!);
-        }
-      },
-      child: BlocListener<AuthBloc, AuthState>(
-        listenWhen: (prev, curr) =>
-            curr.status == AuthStatus.authenticated &&
-            prev.status != AuthStatus.authenticated,
-        listener: (context, state) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const SetupProfileScreen()),
-          );
-        },
-        child: Scaffold(
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppColors.white, Color(0xFFEFF6FF)],
-              ),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (prev, curr) => curr.status == AuthStatus.error && prev.status != AuthStatus.error,
+          listener: (context, state) {
+            if (state.errorMessage != null) {
+              _showSnackBar(state.errorMessage!);
+            }
+          },
+        ),
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (prev, curr) => curr.status == AuthStatus.authenticated && prev.status != AuthStatus.authenticated,
+          listener: (context, state) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const SetupProfileScreen()),
+            );
+          },
+        ),
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (prev, curr) => curr.status == AuthStatus.needsVerification && prev.status != AuthStatus.needsVerification,
+          listener: (context, state) {
+            if (state.emailToVerify != null) {
+              Navigator.pushNamed(
+                context,
+                '/otp-verification',
+                arguments: state.emailToVerify,
+              );
+            }
+          },
+        ),
+      ],
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.white, Color(0xFFEFF6FF)],
             ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingL),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 24),
-                    _buildHeader(),
-                    const SizedBox(height: AppSizes.paddingXL),
-                    _buildRegisterCard(),
-                    const SizedBox(height: AppSizes.paddingXL),
-                    _buildFooter(),
-                    const SizedBox(height: AppSizes.paddingXL),
-                  ],
-                ),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingL),
+              child: Column(
+                children: [
+                  const SizedBox(height: 24),
+                  _buildHeader(),
+                  const SizedBox(height: AppSizes.paddingXL),
+                  _buildRegisterCard(),
+                  const SizedBox(height: AppSizes.paddingXL),
+                  _buildFooter(),
+                  const SizedBox(height: AppSizes.paddingXL),
+                ],
               ),
             ),
           ),

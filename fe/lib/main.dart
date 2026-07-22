@@ -14,6 +14,9 @@ import 'features/auth/screens/splash_screen.dart';
 import 'features/main/screens/main_navigation_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
+import 'features/auth/screens/otp_verification_screen.dart';
+import 'features/auth/screens/forgot_password_screen.dart';
+import 'features/auth/screens/reset_password_screen.dart';
 import 'features/auth/screens/setup_profile_screen.dart';
 import 'features/profile/bloc/profile_bloc.dart';
 import 'features/profile/services/user_api_service.dart';
@@ -87,6 +90,23 @@ class FindMyTeamApp extends StatelessWidget {
           '/': (context) => const SplashScreen(),
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
+          '/forgot-password': (context) => const ForgotPasswordScreen(),
+          '/otp-verification': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments;
+            if (args is Map<String, dynamic>) {
+              return OtpVerificationScreen(
+                email: args['email'] as String? ?? '',
+                isForgotPassword: args['isForgotPassword'] as bool? ?? false,
+              );
+            }
+            return OtpVerificationScreen(email: args as String? ?? '');
+          },
+          '/reset-password': (context) {
+            final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>;
+            return ResetPasswordScreen(
+              email: args['email'] as String,
+            );
+          },
           '/setup-profile': (context) => const SetupProfileScreen(),
           '/main': (context) {
             final initialIndex = ModalRoute.of(context)?.settings.arguments as int? ?? 0;

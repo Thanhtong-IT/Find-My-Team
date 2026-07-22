@@ -30,10 +30,10 @@ class DioClient {
 
     instance.interceptors.add(AuthInterceptor(tokenRepository));
     instance.interceptors.add(LogInterceptor(
-      requestHeader: false,
-      requestBody: false,
+      requestHeader: true,
+      requestBody: true,
       responseHeader: false,
-      responseBody: false,
+      responseBody: true,
       error: true,
     ));
   }

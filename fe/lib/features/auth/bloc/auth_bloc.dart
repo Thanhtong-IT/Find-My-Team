@@ -31,6 +31,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<AuthLoginRequested>(_onLoginRequested);
     on<AuthRegisterRequested>(_onRegisterRequested);
     on<AuthLogoutRequested>(_onLogoutRequested);
+    on<AuthVerifyOtpRequested>(_onVerifyOtpRequested);
+    on<AuthResendOtpRequested>(_onResendOtpRequested);
 
     // Listen to WebSocket reconnection to re-register AppEventBus
     _wsStatusSub = _wsClient.statusStream.listen((status) {
@@ -110,19 +112,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     emit(const AuthState.loading());
     debugPrint('[Auth] Bắt đầu register: ${event.email}');
     try {
-      final result = await _authApiService.register(
+      await _authApiService.register(
         email: event.email,
         password: event.password,
         username: event.username,
         fullName: event.fullName,
       );
-      await _saveTokens(result.tokens);
-      await _secureStorage.saveUserId(result.user.id);
-      _isAuthenticated = true;
-      debugPrint('[Auth] Register thành công: ${event.email}');
-      _connectWebSocket();
-      UnreadFriendManager.instance.init(result.user.id);
-      emit(AuthState.authenticated(result.user));
+      debugPrint('[Auth] Register thành công, chuyển sang xác thực OTP: ${event.email}');
+      emit(AuthState.needsVerification(event.email));
     } on DioException catch (e) {
       final msg = e.response?.data?['message'] as String? ??
           e.message ??
@@ -134,6 +131,52 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       debugPrint('[Auth] Register lỗi: $e');
       emit(AuthState.error('Lỗi không xác định: $e'));
       emit(const AuthState.unauthenticated());
+    }
+  }
+
+  Future<void> _onVerifyOtpRequested(
+    AuthVerifyOtpRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(const AuthState.loading());
+    debugPrint('[Auth] Bắt đầu xác thực OTP cho: ${event.email}');
+    try {
+      final result = await _authApiService.verifyOtp(
+        email: event.email,
+        otp: event.otp,
+      );
+      await _saveTokens(result.tokens);
+      await _secureStorage.saveUserId(result.user.id);
+      _isAuthenticated = true;
+      debugPrint('[Auth] Xác thực OTP thành công: ${event.email}');
+      _connectWebSocket();
+      UnreadFriendManager.instance.init(result.user.id);
+      emit(AuthState.authenticated(result.user));
+    } on DioException catch (e) {
+      final msg = e.response?.data?['message'] as String? ??
+          e.message ??
+          'Xác thực OTP thất bại';
+      debugPrint('[Auth] OTP thất bại: $msg');
+      emit(AuthState.error(msg));
+      // Giữ nguyên trạng thái needsVerification để user có thể nhập lại
+      emit(AuthState.needsVerification(event.email));
+    } catch (e) {
+      debugPrint('[Auth] OTP lỗi: $e');
+      emit(AuthState.error('Lỗi không xác định: $e'));
+      emit(AuthState.needsVerification(event.email));
+    }
+  }
+
+  Future<void> _onResendOtpRequested(
+    AuthResendOtpRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    debugPrint('[Auth] Gửi lại OTP cho: ${event.email}');
+    try {
+      await _authApiService.resendOtp(event.email);
+      // Có thể emit một state thông báo đã gửi lại thành công nếu cần
+    } catch (e) {
+      debugPrint('[Auth] Gửi lại OTP lỗi: $e');
     }
   }
 

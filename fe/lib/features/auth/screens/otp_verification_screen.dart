@@ -5,11 +5,17 @@ import '../../../core/constants/constants.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import '../services/auth_api_service.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String email;
+  final bool isForgotPassword;
 
-  const OtpVerificationScreen({super.key, required this.email});
+  const OtpVerificationScreen({
+    super.key,
+    required this.email,
+    this.isForgotPassword = false,
+  });
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -21,6 +27,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   int _timerSeconds = 60;
   Timer? _timer;
   bool _canResend = false;
+  bool _isVerifying = false;
+  final _authService = AuthApiService();
 
   @override
   void initState() {
@@ -73,12 +81,32 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
-  void _verifyOtp() {
+  Future<void> _verifyOtp() async {
     final otp = _controllers.map((c) => c.text).join();
-    context.read<AuthBloc>().add(AuthVerifyOtpRequested(
-          email: widget.email,
-          otp: otp,
-        ));
+    if (widget.isForgotPassword) {
+      setState(() => _isVerifying = true);
+      try {
+        await _authService.verifyResetOtp(email: widget.email, otp: otp);
+        if (!mounted) return;
+        Navigator.pushNamed(
+          context,
+          '/reset-password',
+          arguments: {'email': widget.email},
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', '')), backgroundColor: AppColors.error),
+        );
+      } finally {
+        if (mounted) setState(() => _isVerifying = false);
+      }
+    } else {
+      context.read<AuthBloc>().add(AuthVerifyOtpRequested(
+            email: widget.email,
+            otp: otp,
+          ));
+    }
   }
 
   void _resendOtp() {
@@ -96,7 +124,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     return BlocListener<AuthBloc, AuthState>(
       listener: (context, state) {
         if (state.status == AuthStatus.authenticated) {
-          Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false);
+          Navigator.pushNamedAndRemoveUntil(context, '/setup-profile', (route) => false);
         } else if (state.status == AuthStatus.error) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.errorMessage ?? 'Xác thực thất bại'), backgroundColor: AppColors.error),
@@ -164,8 +192,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 const SizedBox(height: 48),
                 BlocBuilder<AuthBloc, AuthState>(
                   builder: (context, state) {
+                    final isLoading = state.isLoading || _isVerifying;
                     return ElevatedButton(
-                      onPressed: state.isLoading ? null : _verifyOtp,
+                      onPressed: isLoading ? null : _verifyOtp,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -173,7 +202,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
                       ),
-                      child: state.isLoading
+                      child: isLoading
                           ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                           : const Text('Xác nhận', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     );

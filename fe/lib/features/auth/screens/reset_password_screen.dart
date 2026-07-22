@@ -4,9 +4,8 @@ import '../services/auth_api_service.dart';
 
 class ResetPasswordScreen extends StatefulWidget {
   final String email;
-  final String otp;
 
-  const ResetPasswordScreen({super.key, required this.email, required this.otp});
+  const ResetPasswordScreen({super.key, required this.email});
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
@@ -44,7 +43,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     try {
       await _authService.resetPassword(
         email: widget.email,
-        otp: widget.otp,
         newPassword: password,
       );
       if (!mounted) return;

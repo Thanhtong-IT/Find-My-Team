@@ -62,50 +62,63 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocListener<AuthBloc, AuthState>(
-      listenWhen: (prev, curr) =>
-          curr.status == AuthStatus.error && prev.status != AuthStatus.error,
-      listener: (context, state) {
-        if (state.errorMessage != null) {
-          _showSnackBar(state.errorMessage!);
-        }
-      },
-      child: BlocListener<AuthBloc, AuthState>(
-        listenWhen: (prev, curr) =>
-            curr.status == AuthStatus.authenticated &&
-            prev.status != AuthStatus.authenticated,
-        listener: (context, state) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
-          );
-        },
-        child: Scaffold(
-          body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [AppColors.white, Color(0xFFEFF6FF)],
-              ),
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (prev, curr) => curr.status == AuthStatus.error && prev.status != AuthStatus.error,
+          listener: (context, state) {
+            if (state.errorMessage != null) {
+              _showSnackBar(state.errorMessage!);
+            }
+          },
+        ),
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (prev, curr) => curr.status == AuthStatus.authenticated && prev.status != AuthStatus.authenticated,
+          listener: (context, state) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+            );
+          },
+        ),
+        BlocListener<AuthBloc, AuthState>(
+          listenWhen: (prev, curr) => curr.status == AuthStatus.needsVerification && prev.status != AuthStatus.needsVerification,
+          listener: (context, state) {
+            if (state.emailToVerify != null) {
+              Navigator.pushNamed(
+                context,
+                '/otp-verification',
+                arguments: state.emailToVerify,
+              );
+            }
+          },
+        ),
+      ],
+      child: Scaffold(
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [AppColors.white, Color(0xFFEFF6FF)],
             ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingL),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 48),
-                    _buildHeader(),
-                    const SizedBox(height: AppSizes.paddingXL),
-                    _buildForm(),
-                    const SizedBox(height: AppSizes.paddingXL),
-                    _buildLoginButton(),
-                    const SizedBox(height: AppSizes.paddingL),
-                    _buildFooter(),
-                    const SizedBox(height: AppSizes.paddingXL),
-                  ],
-                ),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: AppSizes.paddingL),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 48),
+                  _buildHeader(),
+                  const SizedBox(height: AppSizes.paddingXL),
+                  _buildForm(),
+                  const SizedBox(height: AppSizes.paddingXL),
+                  _buildLoginButton(),
+                  const SizedBox(height: AppSizes.paddingL),
+                  _buildFooter(),
+                  const SizedBox(height: AppSizes.paddingXL),
+                ],
               ),
             ),
           ),
@@ -163,6 +176,25 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: AppSizes.paddingL),
           _buildPasswordField(),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/forgot-password'),
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Quên mật khẩu?',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

@@ -20,41 +20,24 @@ class AuthApiService {
 
       final json = resp.data as Map<String, dynamic>?;
       if (json == null || json['success'] != true) {
-        throw DioException(
-          requestOptions: resp.requestOptions,
-          message: (json?['message'] ?? 'Đăng nhập thất bại') as String,
-          response: resp,
-        );
+        throw Exception(json?['message'] ?? 'Đăng nhập thất bại');
       }
 
       final data = json['data'] as Map<String, dynamic>?;
-      if (data == null) throw DioException(requestOptions: resp.requestOptions);
+      if (data == null) throw Exception('Dữ liệu phản hồi không hợp lệ');
 
-      // Backend returns flat structure: { userId, email, username, accessToken, refreshToken, ... }
-      // Not nested: { tokens: {...}, user: {...} }
       final tokens = AuthTokens.fromJson(data);
       final user = UserModel.fromJson(data);
       return (tokens: tokens, user: user);
-    } on DioException {
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
       rethrow;
-    } catch (_) {
-      // Backend offline — demo mode login
-      return (
-        tokens: AuthTokens(
-          accessToken: 'mock_access_${DateTime.now().millisecondsSinceEpoch}',
-          refreshToken: 'mock_refresh_${DateTime.now().millisecondsSinceEpoch}',
-        ),
-        user: UserModel(
-          id: '1',
-          username: email.split('@').first,
-          email: email,
-          displayName: email.split('@').first,
-        ),
-      );
     }
   }
 
-  Future<({AuthTokens tokens, UserModel user})> register({
+  Future<bool> register({
     required String email,
     required String password,
     required String username,
@@ -73,47 +56,131 @@ class AuthApiService {
 
       final json = resp.data as Map<String, dynamic>?;
       if (json == null || json['success'] != true) {
-        throw DioException(
-          requestOptions: resp.requestOptions,
-          message: (json?['message'] ?? 'Đăng ký thất bại') as String,
-          response: resp,
-        );
+        throw Exception(json?['message'] ?? 'Đăng ký thất bại');
+      }
+      return true;
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<({AuthTokens tokens, UserModel user})> verifyOtp({
+    required String email,
+    required String otp,
+  }) async {
+    try {
+      final resp = await DioClient.post(
+        ApiConstants.verifyOtp,
+        data: {
+          'email': email.trim(),
+          'otp': otp.trim(),
+        },
+      );
+
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw Exception(json?['message'] ?? 'Xác thực OTP thất bại');
       }
 
       final data = json['data'] as Map<String, dynamic>?;
-      if (data == null) throw DioException(requestOptions: resp.requestOptions);
+      if (data == null) throw Exception('Dữ liệu phản hồi không hợp lệ');
 
-      // Backend returns flat structure: { userId, email, username, accessToken, refreshToken, ... }
       final tokens = AuthTokens.fromJson(data);
       final user = UserModel.fromJson(data);
       return (tokens: tokens, user: user);
-    } on DioException {
-      // Backend offline — demo mode register
-      return (
-        tokens: AuthTokens(
-          accessToken: 'mock_access_${DateTime.now().millisecondsSinceEpoch}',
-          refreshToken: 'mock_refresh_${DateTime.now().millisecondsSinceEpoch}',
-        ),
-        user: UserModel(
-          id: '1',
-          username: username,
-          email: email,
-          displayName: fullName ?? username,
-        ),
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> resendOtp(String email) async {
+    try {
+      final resp = await DioClient.post(
+        ApiConstants.resendOtp,
+        data: {'email': email.trim()},
       );
-    } catch (_) {
-      return (
-        tokens: AuthTokens(
-          accessToken: 'mock_access_${DateTime.now().millisecondsSinceEpoch}',
-          refreshToken: 'mock_refresh_${DateTime.now().millisecondsSinceEpoch}',
-        ),
-        user: UserModel(
-          id: '1',
-          username: username,
-          email: email,
-          displayName: fullName ?? username,
-        ),
+
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw Exception(json?['message'] ?? 'Gửi lại mã OTP thất bại');
+      }
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  Future<void> forgotPassword(String email) async {
+    try {
+      final resp = await DioClient.post(
+        ApiConstants.forgotPassword,
+        data: {'email': email.trim()},
       );
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw Exception(json?['message'] ?? 'Yêu cầu khôi phục mật khẩu thất bại');
+      }
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
+      throw Exception('Lỗi không xác định: $e');
+    }
+  }
+
+  Future<void> verifyResetOtp({
+    required String email,
+    required String otp,
+  }) async {
+    try {
+      final resp = await DioClient.post(
+        ApiConstants.verifyResetOtp,
+        data: {
+          'email': email.trim(),
+          'otp': otp.trim(),
+        },
+      );
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw Exception(json?['message'] ?? 'Xác thực mã OTP thất bại');
+      }
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
+      throw Exception('Lỗi không xác định: $e');
+    }
+  }
+
+  Future<void> resetPassword({
+    required String email,
+    required String newPassword,
+  }) async {
+    try {
+      final resp = await DioClient.post(
+        ApiConstants.resetPassword,
+        data: {
+          'email': email.trim(),
+          'password': newPassword,
+        },
+      );
+      final json = resp.data as Map<String, dynamic>?;
+      if (json == null || json['success'] != true) {
+        throw Exception(json?['message'] ?? 'Đặt lại mật khẩu thất bại');
+      }
+    } on DioException catch (e) {
+      final message = e.response?.data?['message'] ?? e.message ?? 'Lỗi kết nối server';
+      throw Exception(message);
+    } catch (e) {
+      throw Exception('Lỗi không xác định: $e');
     }
   }
 
